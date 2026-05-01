@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: quiz-panel
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 18

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>親機 | Quiz Panel</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <main class="page host-page">
+    <section class="panel setup-panel" id="createSection">
+      <h1>Quiz Panel 親機</h1>
+      <p class="description">回答を集めて、締め切り、正解判定、モニター表示を行うための画面です。</p>
+      <button class="button button-primary" id="createRoomBtn" type="button">ルームを作成</button>
+      <p class="status-text" id="createMessage"></p>
+    </section>
+
+    <section class="host-shell hidden" id="controlSection">
+      <section class="panel host-overview host-overview-compact">
+        <div class="host-title-row">
+          <h1>親機</h1>
+          <div class="host-room-pill">
+            <span class="label">ROOM</span>
+            <strong class="room-code" id="roomCode">------</strong>
+          </div>
+        </div>
+        <p class="status-text" id="controlMessage"></p>
+      </section>
+
+      <div class="host-layout">
+        <aside class="panel host-side">
+          <h2>参加用QR</h2>
+          <div class="qr-panel">
+            <div class="qr-box">
+              <img id="playerQrImage" alt="参加用QRコード" />
+            </div>
+          </div>
+
+          <label class="field">
+            <span class="label">参加URL</span>
+            <select id="playerUrlSelect"></select>
+          </label>
+
+          <div class="button-row compact">
+            <button class="button" id="copyPlayerUrlBtn" type="button">参加URLをコピー</button>
+            <button class="button" id="reloadNetworkBtn" type="button">URL更新</button>
+          </div>
+
+          <h2>モニター</h2>
+          <label class="field">
+            <span class="label">モニターURL</span>
+            <input id="monitorUrlInput" type="text" readonly />
+          </label>
+
+          <div class="button-row compact">
+            <button class="button" id="copyMonitorUrlBtn" type="button">URLをコピー</button>
+            <button class="button" id="openMonitorBtn" type="button">別画面で開く</button>
+          </div>
+        </aside>
+
+        <section class="panel host-main">
+          <div class="section-head host-answer-head">
+            <div>
+              <h2>回答一覧</h2>
+              <p class="description">回答カードをクリックすると正解、もう一度クリックすると判定なしに戻ります。</p>
+            </div>
+
+            <div class="button-row host-action-row">
+              <button class="button button-primary" id="toggleInputBtn" type="button">入力を締め切る</button>
+              <button class="button" id="toggleDisplayBtn" type="button">回答を表示する</button>
+              <button class="button button-danger" id="clearAllBtn" type="button">回答をリセット</button>
+            </div>
+          </div>
+
+          <div class="host-board-stage" id="hostBoardStage">
+            <div class="host-board-onair" aria-hidden="true">
+              <span class="onair-dot"></span>
+              <span>ON AIR</span>
+            </div>
+            <div class="host-lock-overlay" aria-hidden="true">
+              <div class="host-lock-mark">🔒</div>
+              <div class="host-lock-text">入力締切中</div>
+            </div>
+            <div class="host-answer-grid" id="playerCards"></div>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/host.js"></script>
+</body>
+</html>

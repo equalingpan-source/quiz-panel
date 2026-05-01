@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>参加 | Quiz Panel</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body class="player-body">
+  <main class="page player-page-single">
+    <section class="panel simple-panel">
+      <h1>回答パネルに参加</h1>
+      <p class="description">親機のQRまたは参加URLから開いたら、名前を入れて回答画面へ進みます。</p>
+
+      <input id="roomCodeInput" type="hidden" />
+
+      <label class="field">
+        <span class="label">名前</span>
+        <input id="playerNameInput" type="text" maxlength="12" placeholder="名前を入力" autocomplete="nickname" />
+      </label>
+
+      <button class="button button-primary" id="joinBtn" type="button">回答画面へ進む</button>
+      <p class="status-text" id="joinMessage"></p>
+    </section>
+  </main>
+
+  <script src="/player-entry.js"></script>
+</body>
+</html>
