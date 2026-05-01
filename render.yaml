@@ -2,6 +2,18 @@ services:
   - type: web
     name: quiz-panel
     runtime: node
+    branch: main
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 18
+  - type: web
+    name: quiz-panel-legacy
+    runtime: node
+    branch: legacy/no-handwriting
     plan: free
     buildCommand: npm install
     startCommand: npm start
