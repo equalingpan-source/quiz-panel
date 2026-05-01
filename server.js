@@ -182,6 +182,14 @@ function clearRound(room) {
   room.revealedAnswers.clear();
 }
 
+function requestPlayerLocks(room) {
+  for (const player of room.players.values()) {
+    if (!player.locked) {
+      io.to(player.id).emit('player:forceLock', { roomCode: room.code });
+    }
+  }
+}
+
 function setRevealMode(room, mode) {
   if (mode === 1 || mode === 2) {
     // 初めて回答を開く際に、その時点の回答を固定
@@ -306,9 +314,16 @@ io.on('connection', (socket) => {
     const room = requireHost(roomCode, socket, ack);
     if (!room) return;
 
-    room.inputEnabled = inputEnabled !== false;
+    const nextEnabled = inputEnabled !== false;
+    const shouldRequestLocks = room.inputEnabled && !nextEnabled;
+
+    room.inputEnabled = nextEnabled;
     ack({ ok: true, room: serializeHostRoom(room) });
     emitRoomState(room);
+
+    if (shouldRequestLocks) {
+      requestPlayerLocks(room);
+    }
   });
 
   socket.on('host:setRevealMode', ({ roomCode, mode }, ack = () => {}) => {
@@ -431,6 +446,32 @@ io.on('connection', (socket) => {
 
     if (!room.inputEnabled || player.locked) {
       ack({ ok: false, error: '現在は入力を受け付けていません。' });
+      return;
+    }
+
+    player.draftText = normalizeAnswer(text);
+    player.locked = true;
+    player.lastEditedAt = Date.now();
+
+    ack({ ok: true, room: serializePlayerRoom(room, player.id) });
+    emitRoomState(room);
+  });
+
+  socket.on('player:lockDraft', ({ roomCode, text }, ack = () => {}) => {
+    const room = getRoom(roomCode);
+    if (!room) {
+      ack({ ok: false, error: 'ルームが見つかりません。' });
+      return;
+    }
+
+    const player = room.players.get(socket.id);
+    if (!player) {
+      ack({ ok: false, error: '参加情報が見つかりません。' });
+      return;
+    }
+
+    if (player.locked) {
+      ack({ ok: true, room: serializePlayerRoom(room, player.id) });
       return;
     }
 

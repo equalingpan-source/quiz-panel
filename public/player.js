@@ -113,6 +113,21 @@ function joinRoom() {
   });
 }
 
+function lockCurrentAnswer() {
+  if (!currentRoom || wasSelfLocked) return;
+
+  const text = normalizeAnswer(answerInput.value);
+  answerInput.value = text;
+  syncCounter(text);
+
+  socket.emit('player:lockDraft', { roomCode: currentRoom.code, text }, (response) => {
+    if (response.ok) {
+      isDirty = false;
+      applyRoom(response.room);
+    }
+  });
+}
+
 answerInput.addEventListener('input', () => {
   isDirty = true;
   syncCounter(answerInput.value);
@@ -151,6 +166,11 @@ submitAnswerBtn.addEventListener('click', () => {
 
 socket.on('player:room', (room) => {
   applyRoom(room);
+});
+
+socket.on('player:forceLock', ({ roomCode }) => {
+  if (!currentRoom || currentRoom.code !== roomCode) return;
+  lockCurrentAnswer();
 });
 
 socket.on('room:closed', () => {

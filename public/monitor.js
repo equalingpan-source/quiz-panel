@@ -83,6 +83,7 @@ function applyRoom(room) {
 
   const showAnswers = mode > 0;
   const playerCount = room.board.length;
+  const isSingleLayout = playerCount === 1;
 
   let cols = 1;
   let rows = 1;
@@ -91,8 +92,9 @@ function applyRoom(room) {
     rows = Math.ceil(playerCount / cols);
   }
 
-  monitorBoard.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
-  monitorBoard.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+  monitorBoard.classList.toggle('is-single-layout', isSingleLayout);
+  monitorBoard.style.gridTemplateColumns = isSingleLayout ? 'minmax(320px, 1120px)' : `repeat(${cols}, 1fr)`;
+  monitorBoard.style.gridTemplateRows = isSingleLayout ? 'auto' : `repeat(${rows}, 1fr)`;
 
   const currentIds = new Set(room.board.map((player) => `player-${player.id}`));
   Array.from(monitorBoard.children).forEach((child) => {
