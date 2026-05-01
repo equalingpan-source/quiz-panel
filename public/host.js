@@ -166,7 +166,7 @@ function renderPlayerCards(room) {
 
       const resultLabel = isCorrect ? '正解' : '';
 
-      const text = player.draftText || ' ';
+      const text = player.answerText || ' ';
       const charCount = Array.from(text).length;
       let fontSize = '1.2rem'; // Default
 

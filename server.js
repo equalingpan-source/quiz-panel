@@ -81,14 +81,19 @@ function getSortedPlayers(room) {
   return Array.from(room.players.values()).sort((left, right) => left.slot - right.slot);
 }
 
+function getCommittedAnswer(player) {
+  return player.locked ? player.draftText : '';
+}
+
 function serializeBoard(room) {
   return getSortedPlayers(room).map((player) => ({
     id: player.id,
     slot: player.slot,
     name: player.name,
     draftText: player.draftText,
+    answerText: getCommittedAnswer(player),
     displayText: room.revealedAnswers.get(player.id) || '',
-    charCount: Array.from(player.draftText).length,
+    charCount: Array.from(getCommittedAnswer(player)).length,
     lastEditedAt: player.lastEditedAt,
     result: player.result,
     locked: player.locked,
@@ -183,7 +188,7 @@ function setRevealMode(room, mode) {
     if (room.revealMode === 0) {
       room.revealedAnswers.clear();
       for (const player of room.players.values()) {
-        room.revealedAnswers.set(player.id, player.draftText);
+        room.revealedAnswers.set(player.id, getCommittedAnswer(player));
       }
     }
   } else {
