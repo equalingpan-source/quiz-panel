@@ -17,10 +17,8 @@ const presetRoomCode = String(params.get('room') || '').trim().toUpperCase();
 const queryName = String(params.get('name') || '').trim();
 
 let currentRoom = null;
-let syncTimer = null;
-let lastSyncedText = '';
-let pendingDraftText = '';
-let isComposing = false;
+let isDirty = false;
+let wasSelfLocked = false;
 
 let entry = null;
 try {
@@ -65,7 +63,7 @@ function normalizeAnswer(value) {
 }
 
 function syncCounter(text) {
-  const charCount = Array.from(text || '').length;
+  const charCount = Array.from(String(text || '')).length;
   charCounter.textContent = `${charCount} / 24`;
 }
 
@@ -78,61 +76,27 @@ function applyRoom(room) {
   const isInputLockedByHost = !room.inputEnabled;
   const isSelfLocked = !!room.me?.locked;
   const isLocked = isInputLockedByHost || isSelfLocked;
-  const draftText = room.me?.draftText || '';
-  lastSyncedText = draftText;
-  const localText = normalizeAnswer(answerInput.value);
-  const isActivelyEditing = document.activeElement === answerInput;
-  const shouldKeepLocalDraft = isActivelyEditing
-    && !isLocked
-    && (isComposing || localText !== draftText);
+  const serverDraft = room.me?.draftText || '';
 
-  if (!shouldKeepLocalDraft && answerInput.value !== draftText) {
-    answerInput.value = draftText;
+  // Stability-first:
+  // while the field is editable, keep the local draft untouched.
+  // only reflect server state after submit, unlock reset, or before editing starts.
+  if (isSelfLocked || (wasSelfLocked && !isSelfLocked) || !isDirty) {
+    answerInput.value = serverDraft;
+    isDirty = false;
   }
 
-  const displayText = shouldKeepLocalDraft ? pendingDraftText || localText : draftText;
-  syncCounter(displayText);
+  syncCounter(answerInput.value);
 
   answerInput.disabled = isLocked;
   clearAnswerBtn.disabled = isLocked;
   submitAnswerBtn.disabled = isLocked;
   playerCompose.classList.toggle('is-locked', isLocked);
-
-  if (isLocked || draftText === pendingDraftText) {
-    pendingDraftText = '';
-  }
+  wasSelfLocked = isSelfLocked;
 
   const result = room.me?.result || 'pending';
   const shouldShowCorrect = result === 'correct' && room.revealMode === 2;
   playerCompose.classList.toggle('result-correct', shouldShowCorrect);
-}
-
-function scheduleSync() {
-  if (!currentRoom) return;
-  if (isComposing) return;
-
-  const nextText = normalizeAnswer(answerInput.value);
-  if (answerInput.value !== nextText) {
-    answerInput.value = nextText;
-  }
-  syncCounter(nextText);
-  pendingDraftText = nextText;
-
-  if (!currentRoom.inputEnabled || nextText === lastSyncedText) {
-    return;
-  }
-
-  window.clearTimeout(syncTimer);
-  syncTimer = window.setTimeout(() => {
-    socket.emit('player:updateDraft', { roomCode: currentRoom.code, text: nextText }, (response) => {
-      if (response.ok) {
-        lastSyncedText = response.me?.draftText || '';
-        if (lastSyncedText === pendingDraftText) {
-          pendingDraftText = '';
-        }
-      }
-    });
-  }, 80);
 }
 
 function joinRoom() {
@@ -150,27 +114,20 @@ function joinRoom() {
 }
 
 answerInput.addEventListener('input', () => {
-  scheduleSync();
-});
-
-answerInput.addEventListener('compositionstart', () => {
-  isComposing = true;
-});
-
-answerInput.addEventListener('compositionend', () => {
-  isComposing = false;
-  scheduleSync();
+  isDirty = true;
+  syncCounter(answerInput.value);
 });
 
 clearAnswerBtn.addEventListener('click', () => {
   answerInput.value = '';
-  scheduleSync();
+  isDirty = true;
+  syncCounter(answerInput.value);
   answerInput.focus();
 });
 
 submitAnswerBtn.addEventListener('click', () => {
   if (!currentRoom || !currentRoom.inputEnabled) return;
-  
+
   const text = normalizeAnswer(answerInput.value);
   if (!text) {
     alert('回答を入力してください。');
@@ -178,8 +135,12 @@ submitAnswerBtn.addEventListener('click', () => {
   }
 
   if (confirm('回答を送信して確定しますか？\n送信後は修正できません。')) {
+    answerInput.value = text;
+    syncCounter(text);
+
     socket.emit('player:submitAnswer', { roomCode: currentRoom.code, text }, (response) => {
       if (response.ok) {
+        isDirty = false;
         applyRoom(response.room);
       } else {
         alert(response.error || '送信に失敗しました。');
