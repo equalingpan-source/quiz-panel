@@ -67,25 +67,6 @@ function normalizeAnswer(value) {
 function syncCounter(text) {
   const charCount = Array.from(text || '').length;
   charCounter.textContent = `${charCount} / 24`;
-  updateFontSize(charCount);
-}
-
-function updateFontSize(charCount) {
-  let fontSize = '2rem'; // Default
-
-  if (charCount === 0) {
-    fontSize = '2rem';
-  } else if (charCount <= 4) {
-    fontSize = '3.5rem';
-  } else if (charCount <= 8) {
-    fontSize = '2.8rem';
-  } else if (charCount <= 12) {
-    fontSize = '2.2rem';
-  } else {
-    fontSize = '1.8rem';
-  }
-
-  answerInput.style.fontSize = fontSize;
 }
 
 function applyRoom(room) {
@@ -97,10 +78,12 @@ function applyRoom(room) {
   const draftText = room.me?.draftText || '';
   lastSyncedText = draftText;
   const localText = normalizeAnswer(answerInput.value);
+  const isActivelyEditing = document.activeElement === answerInput;
   const shouldKeepLocalDraft = !isComposing
     && !!pendingDraftText
     && pendingDraftText !== draftText
-    && localText === pendingDraftText;
+    && localText === pendingDraftText
+    && isActivelyEditing;
 
   if (!shouldKeepLocalDraft && answerInput.value !== draftText) {
     answerInput.value = draftText;
