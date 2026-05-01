@@ -75,26 +75,23 @@ function applyRoom(room) {
   const myName = room.me?.name || playerName || '';
   playerNameDisplay.textContent = myName;
 
+  const isInputLockedByHost = !room.inputEnabled;
+  const isSelfLocked = !!room.me?.locked;
+  const isLocked = isInputLockedByHost || isSelfLocked;
   const draftText = room.me?.draftText || '';
   lastSyncedText = draftText;
   const localText = normalizeAnswer(answerInput.value);
   const isActivelyEditing = document.activeElement === answerInput;
-  const shouldKeepLocalDraft = !isComposing
-    && !!pendingDraftText
-    && pendingDraftText !== draftText
-    && localText === pendingDraftText
-    && isActivelyEditing;
+  const shouldKeepLocalDraft = isActivelyEditing
+    && !isLocked
+    && (isComposing || localText !== draftText);
 
   if (!shouldKeepLocalDraft && answerInput.value !== draftText) {
     answerInput.value = draftText;
   }
 
-  const displayText = shouldKeepLocalDraft ? pendingDraftText : draftText;
+  const displayText = shouldKeepLocalDraft ? pendingDraftText || localText : draftText;
   syncCounter(displayText);
-
-  const isInputLockedByHost = !room.inputEnabled;
-  const isSelfLocked = !!room.me?.locked;
-  const isLocked = isInputLockedByHost || isSelfLocked;
 
   answerInput.disabled = isLocked;
   clearAnswerBtn.disabled = isLocked;
