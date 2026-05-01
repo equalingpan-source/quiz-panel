@@ -15,6 +15,9 @@ const roomCodeEl = document.getElementById('roomCode');
 const toggleInputBtn = document.getElementById('toggleInputBtn');
 const toggleDisplayBtn = document.getElementById('toggleDisplayBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
+const modeTextBtn = document.getElementById('modeTextBtn');
+const modeHandwritingBtn = document.getElementById('modeHandwritingBtn');
+const hostCurrentModePill = document.getElementById('hostCurrentModePill');
 const playerCards = document.getElementById('playerCards');
 const playerQrImage = document.getElementById('playerQrImage');
 const playerUrlSelect = document.getElementById('playerUrlSelect');
@@ -101,11 +104,11 @@ async function copyTextToClipboard(text, buttonEl) {
   }
 
   if (success && buttonEl) {
-    const originalContent = buttonEl.innerHTML;
-    buttonEl.innerHTML = 'コピー完了！';
+    const originalContent = buttonEl.textContent;
+    buttonEl.textContent = 'コピー済み';
     buttonEl.classList.add('button-success');
     setTimeout(() => {
-      buttonEl.innerHTML = originalContent;
+      buttonEl.textContent = originalContent;
       buttonEl.classList.remove('button-success');
     }, 2000);
   }
@@ -152,28 +155,31 @@ function renderPlayerCards(room) {
     .forEach((player) => {
       const card = document.createElement('button');
       card.type = 'button';
-      card.classList.add('host-answer-card'); // CRITICAL: Restore base styling
+      card.classList.add('host-answer-card');
 
       const isCorrect = player.result === 'correct';
       const isLockedVisual = !room.inputEnabled || !!player.locked;
 
-      // Host ALWAYS sees red for correct answers immediately
       card.classList.toggle('is-correct', isCorrect);
       card.classList.toggle('is-locked-visual', isLockedVisual);
-      
+
       const revealMode = room.revealMode || 0;
       if (revealMode > 0) card.classList.add('is-revealed');
 
       const resultLabel = isCorrect ? '正解' : '';
-
       const text = player.answerText || ' ';
+      const isHandwriting = player.answerMode === 'handwriting' && !!player.answerImage;
       const charCount = Array.from(text).length;
-      let fontSize = '1.2rem'; // Default
+      let fontSize = '1.2rem';
 
       if (charCount <= 4) fontSize = '1.8rem';
       else if (charCount <= 8) fontSize = '1.5rem';
       else if (charCount <= 12) fontSize = '1.3rem';
       else fontSize = '1.1rem';
+
+      const answerMarkup = isHandwriting
+        ? '<div class="host-card-drawing"><img class="host-card-image" src="' + player.answerImage + '" alt="手書き回答" /></div>'
+        : `<div class="host-card-text" style="font-size: ${fontSize}">${escapeHtml(text)}</div>`;
 
       card.innerHTML = `
         <div class="host-card-header">
@@ -181,7 +187,7 @@ function renderPlayerCards(room) {
           <span class="host-card-badge">${resultLabel}</span>
         </div>
         <div class="host-card-body">
-          <div class="host-card-text" style="font-size: ${fontSize}">${escapeHtml(text)}</div>
+          ${answerMarkup}
         </div>
         <div class="host-card-footer">
           <span class="host-card-name">${escapeHtml(player.name)}</span>
@@ -203,7 +209,7 @@ function renderPlayerCards(room) {
 
             setMessage(
               controlMessage,
-              nextResult === 'correct' ? `${player.name} を正解にしました。` : `${player.name} を判定なしに戻しました。`,
+              nextResult === 'correct' ? `${player.name} を正解にしました。` : `${player.name} の正解を解除しました。`,
               'ok'
             );
           }
@@ -260,6 +266,18 @@ async function loadNetworkCandidates() {
   }
 }
 
+function renderAnswerMode(room) {
+  const isHandwriting = room.answerMode === 'handwriting';
+  const isSelected = room.answerMode === 'text' || room.answerMode === 'handwriting';
+  modeTextBtn.classList.toggle('button-primary', !isHandwriting);
+  modeTextBtn.classList.toggle('button', true);
+  modeHandwritingBtn.classList.toggle('button-primary', isHandwriting);
+  modeHandwritingBtn.classList.toggle('button', true);
+  hostCurrentModePill.textContent = isSelected
+    ? `回答方式: ${isHandwriting ? '手書き' : 'テキスト'}`
+    : '回答方式: 未選択';
+}
+
 function renderRoom(room) {
   currentRoom = room;
   saveHostRoomCode(room.code);
@@ -267,13 +285,11 @@ function renderRoom(room) {
   controlSection.classList.remove('hidden');
   const mode = room.revealMode || 0;
 
-  // Update Shell classes for UI state & Overall Glow
   controlSection.classList.toggle('is-input-locked', !room.inputEnabled);
   controlSection.classList.toggle('is-answer-revealed', mode === 2);
   controlSection.classList.toggle('mode-answers', mode === 1);
   controlSection.classList.toggle('mode-correct', mode === 2);
 
-  // Update Main On-Air Label (The Pill Bar)
   const onAirLabel = document.getElementById('hostOnAirLabel');
   if (onAirLabel) {
     if (mode === 0) onAirLabel.textContent = '待機中';
@@ -282,29 +298,43 @@ function renderRoom(room) {
   }
 
   roomCodeEl.textContent = room.code;
-  toggleInputBtn.textContent = room.inputEnabled ? '入力を締め切る' : '入力を再開する';
+  toggleInputBtn.textContent = room.inputEnabled ? '配布を締め切る' : '配布開始';
   toggleInputBtn.classList.toggle('button-primary', room.inputEnabled);
   toggleInputBtn.classList.toggle('button-success', !room.inputEnabled);
+  toggleInputBtn.disabled = !room.inputEnabled && !room.answerMode;
 
   let displayBtnText = '回答を表示する';
   let displayBtnClass = 'button-primary';
 
   if (mode === 1) {
-    displayBtnText = '正解を表示する';
+    displayBtnText = '正解表示へ進む';
     displayBtnClass = 'button-success';
   } else if (mode === 2) {
-    displayBtnText = '表示を隠す';
+    displayBtnText = '表示を閉じる';
     displayBtnClass = 'button-danger';
   }
 
   toggleDisplayBtn.textContent = displayBtnText;
   toggleDisplayBtn.className = `button ${displayBtnClass}`;
-
   toggleDisplayBtn.disabled = !room.playerCount;
   clearAllBtn.disabled = !room.playerCount;
 
+  renderAnswerMode(room);
   renderPlayerCards(room);
   renderUrlOptions(room);
+}
+
+function setHostAnswerMode(mode) {
+  if (!currentRoom) return;
+
+  socket.emit('host:setAnswerMode', { roomCode: currentRoom.code, mode }, (response) => {
+    if (!response.ok) {
+      setMessage(controlMessage, response.message, 'warn');
+      return;
+    }
+
+    setMessage(controlMessage, mode === 'handwriting' ? '回答方式を手書きに切り替えました。' : '回答方式をテキストに切り替えました。', 'ok');
+  });
 }
 
 createRoomBtn.addEventListener('click', () => {
@@ -333,7 +363,7 @@ toggleInputBtn.addEventListener('click', () => {
         return;
       }
 
-      setMessage(controlMessage, nextState ? '入力を再開しました。' : '入力を締め切りました。', 'ok');
+      setMessage(controlMessage, nextState ? '配布を開始しました。' : '配布を締め切りました。', 'ok');
     }
   );
 });
@@ -341,25 +371,21 @@ toggleInputBtn.addEventListener('click', () => {
 toggleDisplayBtn.addEventListener('click', () => {
   if (!currentRoom) return;
 
-  // Cycle: 0 -> 1 -> 2 -> 0
   const currentMode = currentRoom.revealMode || 0;
   const nextMode = (currentMode + 1) % 3;
-
-  console.log('Switching revealMode to:', nextMode);
 
   socket.emit(
     'host:setRevealMode',
     { roomCode: currentRoom.code, mode: nextMode },
     (response) => {
       if (!response.ok) {
-        console.error('RevealMode Error:', response.message);
         setMessage(controlMessage, response.message, 'warn');
         return;
       }
 
-      let statusMsg = 'モニター表示を隠しました。';
+      let statusMsg = 'モニター表示を閉じました。';
       if (nextMode === 1) statusMsg = '全員の回答を表示しました。';
-      if (nextMode === 2) statusMsg = '正解の判定を表示しました。';
+      if (nextMode === 2) statusMsg = '正解表示に切り替えました。';
       setMessage(controlMessage, statusMsg, 'ok');
     }
   );
@@ -368,7 +394,7 @@ toggleDisplayBtn.addEventListener('click', () => {
 clearAllBtn.addEventListener('click', () => {
   if (!currentRoom) return;
 
-  const confirmed = confirm('すべての回答をリセットして次の問題へ進みますか？');
+  const confirmed = confirm('全員の回答を消して次の問題に進みますか？');
   if (!confirmed) return;
 
   socket.emit('host:clearAll', { roomCode: currentRoom.code }, (response) => {
@@ -377,8 +403,16 @@ clearAllBtn.addEventListener('click', () => {
       return;
     }
 
-    setMessage(controlMessage, '次の問題へ進む準備ができました。', 'ok');
+    setMessage(controlMessage, '次の問題の準備ができました。', 'ok');
   });
+});
+
+modeTextBtn.addEventListener('click', () => {
+  setHostAnswerMode('text');
+});
+
+modeHandwritingBtn.addEventListener('click', () => {
+  setHostAnswerMode('handwriting');
 });
 
 playerUrlSelect.addEventListener('change', () => {
@@ -395,7 +429,7 @@ copyPlayerUrlBtn.addEventListener('click', async () => {
   if (copied) {
     setMessage(controlMessage, '参加URLをコピーしました。', 'ok');
   } else {
-    setMessage(controlMessage, '参加URLをコピーできませんでした。URL欄を選択して手動でコピーしてください。', 'warn');
+    setMessage(controlMessage, '参加URLをコピーできませんでした。', 'warn');
   }
 });
 
@@ -406,7 +440,7 @@ copyMonitorUrlBtn.addEventListener('click', async () => {
   if (copied) {
     setMessage(controlMessage, 'モニターURLをコピーしました。', 'ok');
   } else {
-    setMessage(controlMessage, 'モニターURLをコピーできませんでした。URL欄を選択して手動でコピーしてください。', 'warn');
+    setMessage(controlMessage, 'モニターURLをコピーできませんでした。', 'warn');
   }
 });
 
@@ -426,7 +460,7 @@ socket.on('host:room', (room) => {
 
 socket.on('room:closed', () => {
   clearHostRoomCode();
-  resetToCreateView('ルームが終了しました。新しく作成してください。', 'warn');
+  resetToCreateView('ルームとの接続が終了しました。必要なら新しく作成してください。', 'warn');
 });
 
 loadNetworkCandidates();

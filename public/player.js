@@ -11,6 +11,13 @@ const playerCompose = document.getElementById('playerCompose');
 const clearAnswerBtn = document.getElementById('clearAnswerBtn');
 const submitAnswerBtn = document.getElementById('submitAnswerBtn');
 const charCounter = document.getElementById('charCounter');
+const modeCaption = document.getElementById('modeCaption');
+const textInputPanel = document.getElementById('textInputPanel');
+const handwritingInputPanel = document.getElementById('handwritingInputPanel');
+const playerWaitPanel = document.getElementById('playerWaitPanel');
+const playerWaitText = document.getElementById('playerWaitText');
+const handwritingCanvas = document.getElementById('handwritingCanvas');
+const handwritingContext = handwritingCanvas.getContext('2d');
 
 const params = new URLSearchParams(window.location.search);
 const presetRoomCode = String(params.get('room') || '').trim().toUpperCase();
@@ -19,6 +26,10 @@ const queryName = String(params.get('name') || '').trim();
 let currentRoom = null;
 let isDirty = false;
 let wasSelfLocked = false;
+let currentMode = 'text';
+let hasHandwritingInk = false;
+let isDrawing = false;
+let activePointerId = null;
 
 let entry = null;
 try {
@@ -62,9 +73,152 @@ function normalizeAnswer(value) {
   return Array.from(String(value || '').replace(/\s+/g, ' ').trim()).slice(0, 24).join('');
 }
 
-function syncCounter(text) {
-  const charCount = Array.from(String(text || '')).length;
+function normalizeAnswerMode(value) {
+  return value === 'handwriting' ? 'handwriting' : 'text';
+}
+
+function syncCounter() {
+  if (currentMode === 'handwriting') {
+    charCounter.textContent = hasHandwritingInk ? '手書き入力あり' : '手書き入力待ち';
+    return;
+  }
+
+  const charCount = Array.from(String(answerInput.value || '')).length;
   charCounter.textContent = `${charCount} / 24`;
+}
+
+function updateModeUi() {
+  const isHandwriting = currentMode === 'handwriting';
+  textInputPanel.classList.toggle('hidden', isHandwriting);
+  handwritingInputPanel.classList.toggle('hidden', !isHandwriting);
+  modeCaption.textContent = isHandwriting ? '親機指定: 手書き回答' : '親機指定: テキスト回答';
+  playerCompose.classList.toggle('mode-handwriting', isHandwriting);
+  playerCompose.classList.toggle('mode-text', !isHandwriting);
+  syncCounter();
+}
+
+function paintCanvasSurface() {
+  const rect = handwritingCanvas.getBoundingClientRect();
+  const scaleX = handwritingCanvas.width / Math.max(rect.width, 1);
+  const scaleY = handwritingCanvas.height / Math.max(rect.height, 1);
+
+  handwritingContext.setTransform(1, 0, 0, 1, 0, 0);
+  handwritingContext.clearRect(0, 0, handwritingCanvas.width, handwritingCanvas.height);
+  handwritingContext.fillStyle = '#2f57d8';
+  handwritingContext.fillRect(0, 0, handwritingCanvas.width, handwritingCanvas.height);
+  handwritingContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+  handwritingContext.strokeStyle = '#ffffff';
+  handwritingContext.lineWidth = 4;
+  handwritingContext.lineCap = 'round';
+  handwritingContext.lineJoin = 'round';
+}
+
+function clearHandwritingCanvas(markDirty = true) {
+  paintCanvasSurface();
+  hasHandwritingInk = false;
+  if (markDirty) {
+    isDirty = true;
+  }
+  syncCounter();
+}
+
+function loadHandwritingFromDataUrl(dataUrl) {
+  paintCanvasSurface();
+  if (!dataUrl) {
+    hasHandwritingInk = false;
+    syncCounter();
+    return;
+  }
+
+  const image = new Image();
+  image.onload = () => {
+    const targetWidth = Math.max(handwritingCanvas.clientWidth, Math.round(handwritingCanvas.width / Math.max(1, window.devicePixelRatio || 1)));
+    const targetHeight = Math.max(handwritingCanvas.clientHeight, Math.round(handwritingCanvas.height / Math.max(1, window.devicePixelRatio || 1)));
+    paintCanvasSurface();
+    handwritingContext.drawImage(image, 0, 0, targetWidth, targetHeight);
+    hasHandwritingInk = true;
+    syncCounter();
+  };
+  image.src = dataUrl;
+}
+
+function exportHandwritingDataUrl() {
+  return hasHandwritingInk ? handwritingCanvas.toDataURL('image/png') : '';
+}
+
+function resizeHandwritingCanvas() {
+  const snapshot = exportHandwritingDataUrl();
+  const rect = handwritingCanvas.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const nextWidth = Math.max(320, Math.round(rect.width * dpr));
+  const nextHeight = Math.max(180, Math.round(rect.height * dpr));
+
+  if (handwritingCanvas.width === nextWidth && handwritingCanvas.height === nextHeight) {
+    return;
+  }
+
+  handwritingCanvas.width = nextWidth;
+  handwritingCanvas.height = nextHeight;
+  paintCanvasSurface();
+
+  if (snapshot) {
+    loadHandwritingFromDataUrl(snapshot);
+  } else {
+    hasHandwritingInk = false;
+    syncCounter();
+  }
+}
+
+function getCanvasPoint(event) {
+  const rect = handwritingCanvas.getBoundingClientRect();
+  return {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+}
+
+function setAnswerMode(mode, options = {}) {
+  const { focus = true, force = false } = options;
+  const nextMode = normalizeAnswerMode(mode);
+
+  if (currentMode === nextMode && !force) {
+    updateModeUi();
+    return;
+  }
+
+  currentMode = nextMode;
+  updateModeUi();
+
+  if (currentMode === 'handwriting') {
+    resizeHandwritingCanvas();
+  }
+
+  if (focus && currentMode === 'text' && !answerInput.disabled) {
+    answerInput.focus();
+  }
+}
+
+function hydrateFromServerDraft(room, me) {
+  answerInput.value = me?.draftText || '';
+  setAnswerMode(room.answerMode || me?.answerMode || 'text', { focus: false, force: true });
+  loadHandwritingFromDataUrl(me?.drawingDataUrl || '');
+  isDirty = false;
+}
+
+function getCurrentAnswerPayload() {
+  if (currentMode === 'handwriting') {
+    return {
+      mode: 'handwriting',
+      text: '',
+      drawingDataUrl: exportHandwritingDataUrl(),
+    };
+  }
+
+  return {
+    mode: 'text',
+    text: normalizeAnswer(answerInput.value),
+    drawingDataUrl: '',
+  };
 }
 
 function applyRoom(room) {
@@ -73,30 +227,45 @@ function applyRoom(room) {
   const myName = room.me?.name || playerName || '';
   playerNameDisplay.textContent = myName;
 
+  const hasModeSelection = room.answerMode === 'text' || room.answerMode === 'handwriting';
   const isInputLockedByHost = !room.inputEnabled;
   const isSelfLocked = !!room.me?.locked;
-  const isLocked = isInputLockedByHost || isSelfLocked;
-  const serverDraft = room.me?.draftText || '';
+  const isLocked = !hasModeSelection || isInputLockedByHost || isSelfLocked;
+  const modeChanged = normalizeAnswerMode(room.answerMode) !== currentMode;
 
-  // Stability-first:
-  // while the field is editable, keep the local draft untouched.
-  // only reflect server state after submit, unlock reset, or before editing starts.
   if (isSelfLocked || (wasSelfLocked && !isSelfLocked) || !isDirty) {
-    answerInput.value = serverDraft;
-    isDirty = false;
+    hydrateFromServerDraft(room, room.me);
+  } else {
+    if (modeChanged) {
+      setAnswerMode(room.answerMode || 'text', { focus: false, force: true });
+    }
   }
-
-  syncCounter(answerInput.value);
 
   answerInput.disabled = isLocked;
   clearAnswerBtn.disabled = isLocked;
   submitAnswerBtn.disabled = isLocked;
+  playerWaitPanel.classList.toggle('hidden', hasModeSelection);
+  if (!hasModeSelection) {
+    textInputPanel.classList.add('hidden');
+    handwritingInputPanel.classList.add('hidden');
+    modeCaption.textContent = '親機が回答方式を選択中';
+    playerWaitText.textContent = '親機が回答方式を選んで配布開始するまでお待ちください。';
+    charCounter.textContent = '待機中';
+  } else if (!room.inputEnabled && !isSelfLocked) {
+    playerWaitPanel.classList.remove('hidden');
+    textInputPanel.classList.add('hidden');
+    handwritingInputPanel.classList.add('hidden');
+    playerWaitText.textContent = '配布開始までお待ちください。開始後に入力できます。';
+  } else {
+    playerWaitPanel.classList.add('hidden');
+  }
   playerCompose.classList.toggle('is-locked', isLocked);
   wasSelfLocked = isSelfLocked;
 
   const result = room.me?.result || 'pending';
   const shouldShowCorrect = result === 'correct' && room.revealMode === 2;
   playerCompose.classList.toggle('result-correct', shouldShowCorrect);
+  syncCounter();
 }
 
 function joinRoom() {
@@ -116,11 +285,11 @@ function joinRoom() {
 function lockCurrentAnswer() {
   if (!currentRoom || wasSelfLocked) return;
 
-  const text = normalizeAnswer(answerInput.value);
-  answerInput.value = text;
-  syncCounter(text);
+  const payload = getCurrentAnswerPayload();
+  answerInput.value = payload.text;
+  syncCounter();
 
-  socket.emit('player:lockDraft', { roomCode: currentRoom.code, text }, (response) => {
+  socket.emit('player:lockDraft', { roomCode: currentRoom.code, ...payload }, (response) => {
     if (response.ok) {
       isDirty = false;
       applyRoom(response.room);
@@ -130,30 +299,41 @@ function lockCurrentAnswer() {
 
 answerInput.addEventListener('input', () => {
   isDirty = true;
-  syncCounter(answerInput.value);
+  syncCounter();
 });
 
 clearAnswerBtn.addEventListener('click', () => {
+  if (currentMode === 'handwriting') {
+    clearHandwritingCanvas(true);
+    return;
+  }
+
   answerInput.value = '';
   isDirty = true;
-  syncCounter(answerInput.value);
+  syncCounter();
   answerInput.focus();
 });
 
 submitAnswerBtn.addEventListener('click', () => {
   if (!currentRoom || !currentRoom.inputEnabled) return;
 
-  const text = normalizeAnswer(answerInput.value);
-  if (!text) {
+  const payload = getCurrentAnswerPayload();
+
+  if (payload.mode === 'text' && !payload.text) {
     alert('回答を入力してください。');
     return;
   }
 
-  if (confirm('回答を送信して確定しますか？\n送信後は修正できません。')) {
-    answerInput.value = text;
-    syncCounter(text);
+  if (payload.mode === 'handwriting' && !payload.drawingDataUrl) {
+    alert('手書き回答を書いてください。');
+    return;
+  }
 
-    socket.emit('player:submitAnswer', { roomCode: currentRoom.code, text }, (response) => {
+  if (confirm('この回答を送信しますか？\n送信後は修正できません。')) {
+    answerInput.value = payload.text;
+    syncCounter();
+
+    socket.emit('player:submitAnswer', { roomCode: currentRoom.code, ...payload }, (response) => {
       if (response.ok) {
         isDirty = false;
         applyRoom(response.room);
@@ -163,6 +343,43 @@ submitAnswerBtn.addEventListener('click', () => {
     });
   }
 });
+
+handwritingCanvas.addEventListener('pointerdown', (event) => {
+  if (playerCompose.classList.contains('is-locked') || currentMode !== 'handwriting') return;
+
+  event.preventDefault();
+  resizeHandwritingCanvas();
+  const point = getCanvasPoint(event);
+  activePointerId = event.pointerId;
+  isDrawing = true;
+  handwritingCanvas.setPointerCapture(event.pointerId);
+  handwritingContext.beginPath();
+  handwritingContext.moveTo(point.x, point.y);
+  handwritingContext.lineTo(point.x, point.y);
+  handwritingContext.stroke();
+  hasHandwritingInk = true;
+  isDirty = true;
+  syncCounter();
+});
+
+handwritingCanvas.addEventListener('pointermove', (event) => {
+  if (!isDrawing || event.pointerId !== activePointerId) return;
+
+  const point = getCanvasPoint(event);
+  handwritingContext.lineTo(point.x, point.y);
+  handwritingContext.stroke();
+});
+
+function stopDrawing(event) {
+  if (event.pointerId !== activePointerId) return;
+
+  isDrawing = false;
+  activePointerId = null;
+  handwritingContext.closePath();
+}
+
+handwritingCanvas.addEventListener('pointerup', stopDrawing);
+handwritingCanvas.addEventListener('pointercancel', stopDrawing);
 
 socket.on('player:room', (room) => {
   applyRoom(room);
@@ -180,4 +397,10 @@ socket.on('room:closed', () => {
   playerCompose.classList.add('is-locked');
 });
 
+window.addEventListener('resize', () => {
+  resizeHandwritingCanvas();
+});
+
 joinRoom();
+resizeHandwritingCanvas();
+updateModeUi();

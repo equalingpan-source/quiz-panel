@@ -16,6 +16,7 @@ const io = new Server(server, {
 const PORT = Number(process.env.PORT) || 3000;
 const MAX_NAME_LENGTH = 12;
 const MAX_ANSWER_LENGTH = 24;
+const MAX_DRAWING_DATA_URL_LENGTH = 450 * 1024;
 const HOST_RECONNECT_GRACE_MS = 60 * 1000;
 const rooms = new Map();
 
@@ -44,6 +45,25 @@ function normalizeAnswer(value) {
     .join('');
 }
 
+function normalizeAnswerMode(value) {
+  return value === 'handwriting' ? 'handwriting' : 'text';
+}
+
+function parseRoomAnswerMode(value) {
+  if (value === 'text' || value === 'handwriting') {
+    return value;
+  }
+  return '';
+}
+
+function normalizeDrawingDataUrl(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  if (!normalized.startsWith('data:image/png;base64,')) return '';
+  if (normalized.length > MAX_DRAWING_DATA_URL_LENGTH) return '';
+  return normalized;
+}
+
 function getLocalIpv4Addresses() {
   const networks = os.networkInterfaces();
   const results = [];
@@ -65,7 +85,8 @@ function createRoom(hostSocketId) {
     code,
     hostSocketId,
     hostDisconnectTimer: null,
-    inputEnabled: true,
+    answerMode: '',
+    inputEnabled: false,
     revealMode: 0, // 0: Hidden, 1: Open Answers, 2: Reveal Correct
     nextSlot: 1,
     players: new Map(),
@@ -85,6 +106,23 @@ function getCommittedAnswer(player) {
   return player.locked ? player.draftText : '';
 }
 
+function getCommittedDrawing(player) {
+  return player.locked ? player.drawingDataUrl : '';
+}
+
+function getCommittedAnswerMode(player) {
+  return player.locked ? parseRoomAnswerMode(player.answerMode) || 'text' : 'text';
+}
+
+function snapshotCommittedAnswer(player) {
+  const mode = getCommittedAnswerMode(player);
+  return {
+    mode,
+    text: mode === 'text' ? getCommittedAnswer(player) : '',
+    drawingDataUrl: mode === 'handwriting' ? getCommittedDrawing(player) : '',
+  };
+}
+
 function serializeBoard(room) {
   return getSortedPlayers(room).map((player) => ({
     id: player.id,
@@ -92,7 +130,11 @@ function serializeBoard(room) {
     name: player.name,
     draftText: player.draftText,
     answerText: getCommittedAnswer(player),
-    displayText: room.revealedAnswers.get(player.id) || '',
+    answerImage: getCommittedDrawing(player),
+    answerMode: getCommittedAnswerMode(player),
+    displayText: room.revealedAnswers.get(player.id)?.text || '',
+    displayImage: room.revealedAnswers.get(player.id)?.drawingDataUrl || '',
+    displayMode: room.revealedAnswers.get(player.id)?.mode || 'text',
     charCount: Array.from(getCommittedAnswer(player)).length,
     lastEditedAt: player.lastEditedAt,
     result: player.result,
@@ -104,6 +146,7 @@ function serializeHostRoom(room) {
   const board = serializeBoard(room);
   return {
     code: room.code,
+    answerMode: room.answerMode,
     inputEnabled: room.inputEnabled,
     revealMode: room.revealMode,
     playerCount: board.length,
@@ -115,6 +158,7 @@ function serializePlayerRoom(room, playerId) {
   const player = room.players.get(playerId);
   return {
     code: room.code,
+    answerMode: room.answerMode,
     inputEnabled: room.inputEnabled,
     revealMode: room.revealMode,
     me: player
@@ -122,6 +166,8 @@ function serializePlayerRoom(room, playerId) {
           id: player.id,
           name: player.name,
           draftText: player.draftText,
+          drawingDataUrl: player.drawingDataUrl,
+          answerMode: player.answerMode,
           result: player.result,
           locked: player.locked,
         }
@@ -132,6 +178,7 @@ function serializePlayerRoom(room, playerId) {
 function serializeMonitorRoom(room) {
   return {
     code: room.code,
+    answerMode: room.answerMode,
     inputEnabled: room.inputEnabled,
     revealMode: room.revealMode,
     board: serializeBoard(room).map((player) => ({
@@ -139,6 +186,8 @@ function serializeMonitorRoom(room) {
       slot: player.slot,
       name: player.name,
       displayText: player.displayText,
+      displayImage: player.displayImage,
+      displayMode: player.displayMode,
       result: player.result,
       locked: player.locked,
     })),
@@ -172,12 +221,15 @@ function requireHost(roomCode, socket, ack) {
 function clearRound(room) {
   for (const player of room.players.values()) {
     player.draftText = '';
+    player.drawingDataUrl = '';
+    player.answerMode = '';
     player.lastEditedAt = null;
     player.result = 'pending';
     player.locked = false;
   }
 
-  room.inputEnabled = true;
+  room.answerMode = '';
+  room.inputEnabled = false;
   room.revealMode = 0;
   room.revealedAnswers.clear();
 }
@@ -192,15 +244,13 @@ function requestPlayerLocks(room) {
 
 function setRevealMode(room, mode) {
   if (mode === 1 || mode === 2) {
-    // 初めて回答を開く際に、その時点の回答を固定
     if (room.revealMode === 0) {
       room.revealedAnswers.clear();
       for (const player of room.players.values()) {
-        room.revealedAnswers.set(player.id, getCommittedAnswer(player));
+        room.revealedAnswers.set(player.id, snapshotCommittedAnswer(player));
       }
     }
   } else {
-    // 非表示にする際
     room.revealedAnswers.clear();
   }
   room.revealMode = mode;
@@ -255,7 +305,7 @@ app.get('/healthz', (_req, res) => {
 
 app.get('/api/version', (_req, res) => {
   res.json({
-    version: 'quiz-panel-simplified-2026-05-01',
+    version: 'quiz-panel-handwriting-2026-05-02',
   });
 });
 
@@ -315,6 +365,10 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     const nextEnabled = inputEnabled !== false;
+    if (nextEnabled && !room.answerMode) {
+      ack({ ok: false, message: '先に回答方式を選んでから配布開始してください。' });
+      return;
+    }
     const shouldRequestLocks = room.inputEnabled && !nextEnabled;
 
     room.inputEnabled = nextEnabled;
@@ -324,6 +378,31 @@ io.on('connection', (socket) => {
     if (shouldRequestLocks) {
       requestPlayerLocks(room);
     }
+  });
+
+  socket.on('host:setAnswerMode', ({ roomCode, mode }, ack = () => {}) => {
+    const room = requireHost(roomCode, socket, ack);
+    if (!room) return;
+
+    if (room.inputEnabled) {
+      ack({ ok: false, message: '配布中は回答方式を変更できません。いったん締め切ってください。' });
+      return;
+    }
+
+    room.answerMode = parseRoomAnswerMode(mode);
+    if (!room.answerMode) {
+      ack({ ok: false, message: '回答方式の指定が不正です。' });
+      return;
+    }
+
+    for (const player of room.players.values()) {
+      if (!player.locked) {
+        player.answerMode = room.answerMode;
+      }
+    }
+
+    ack({ ok: true, room: serializeHostRoom(room) });
+    emitRoomState(room);
   });
 
   socket.on('host:setRevealMode', ({ roomCode, mode }, ack = () => {}) => {
@@ -379,6 +458,8 @@ io.on('connection', (socket) => {
       slot: room.nextSlot,
       name: normalizedName,
       draftText: '',
+      drawingDataUrl: '',
+      answerMode: room.answerMode,
       lastEditedAt: null,
       result: 'pending',
       locked: false,
@@ -398,7 +479,7 @@ io.on('connection', (socket) => {
     emitRoomState(room);
   });
 
-  socket.on('player:updateDraft', ({ roomCode, text }, ack = () => {}) => {
+  socket.on('player:updateDraft', ({ roomCode, text, drawingDataUrl, mode }, ack = () => {}) => {
     const room = getRoom(roomCode);
     if (!room) {
       ack({ ok: false, message: 'ルームが見つかりません。' });
@@ -416,7 +497,15 @@ io.on('connection', (socket) => {
       return;
     }
 
-    player.draftText = normalizeAnswer(text);
+    const submittedMode = normalizeAnswerMode(mode);
+    if (submittedMode !== room.answerMode) {
+      ack({ ok: false, message: '現在の出題形式が切り替わりました。画面を確認してください。' });
+      return;
+    }
+
+    player.answerMode = room.answerMode;
+    player.draftText = player.answerMode === 'text' ? normalizeAnswer(text) : '';
+    player.drawingDataUrl = player.answerMode === 'handwriting' ? normalizeDrawingDataUrl(drawingDataUrl) : '';
     player.lastEditedAt = Date.now();
 
     ack({
@@ -425,13 +514,15 @@ io.on('connection', (socket) => {
         id: player.id,
         name: player.name,
         draftText: player.draftText,
+        drawingDataUrl: player.drawingDataUrl,
+        answerMode: player.answerMode,
         locked: player.locked,
       },
     });
     emitRoomState(room);
   });
   
-  socket.on('player:submitAnswer', ({ roomCode, text }, ack = () => {}) => {
+  socket.on('player:submitAnswer', ({ roomCode, text, drawingDataUrl, mode }, ack = () => {}) => {
     const room = getRoom(roomCode);
     if (!room) {
       ack({ ok: false, error: 'ルームが見つかりません。' });
@@ -449,7 +540,26 @@ io.on('connection', (socket) => {
       return;
     }
 
-    player.draftText = normalizeAnswer(text);
+    const submittedMode = normalizeAnswerMode(mode);
+    if (submittedMode !== room.answerMode) {
+      ack({ ok: false, error: '現在の出題形式が切り替わりました。画面を確認してください。' });
+      return;
+    }
+
+    player.answerMode = room.answerMode;
+    player.draftText = player.answerMode === 'text' ? normalizeAnswer(text) : '';
+    player.drawingDataUrl = player.answerMode === 'handwriting' ? normalizeDrawingDataUrl(drawingDataUrl) : '';
+
+    if (player.answerMode === 'handwriting' && !player.drawingDataUrl) {
+      ack({ ok: false, error: '手書き回答を書いてから送信してください。' });
+      return;
+    }
+
+    if (player.answerMode === 'text' && !player.draftText) {
+      ack({ ok: false, error: '回答を入力してから送信してください。' });
+      return;
+    }
+
     player.locked = true;
     player.lastEditedAt = Date.now();
 
@@ -457,7 +567,7 @@ io.on('connection', (socket) => {
     emitRoomState(room);
   });
 
-  socket.on('player:lockDraft', ({ roomCode, text }, ack = () => {}) => {
+  socket.on('player:lockDraft', ({ roomCode, text, drawingDataUrl, mode }, ack = () => {}) => {
     const room = getRoom(roomCode);
     if (!room) {
       ack({ ok: false, error: 'ルームが見つかりません。' });
@@ -475,7 +585,9 @@ io.on('connection', (socket) => {
       return;
     }
 
-    player.draftText = normalizeAnswer(text);
+    player.answerMode = room.answerMode;
+    player.draftText = player.answerMode === 'text' ? normalizeAnswer(text) : '';
+    player.drawingDataUrl = player.answerMode === 'handwriting' ? normalizeDrawingDataUrl(drawingDataUrl) : '';
     player.locked = true;
     player.lastEditedAt = Date.now();
 

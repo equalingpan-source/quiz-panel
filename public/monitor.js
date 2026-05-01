@@ -133,9 +133,14 @@ function applyRoom(room) {
       card.classList.toggle('is-hidden-state', mode === 0);
 
       const text = player.displayText || ' ';
+      const isHandwriting = player.displayMode === 'handwriting' && !!player.displayImage;
 
       const bodyContent = showAnswers
-        ? `<div class="board-tile-answer-text">${escapeHtml(text)}</div>`
+        ? (
+          isHandwriting
+            ? `<div class="board-tile-answer-art"><img class="board-tile-answer-image" src="${player.displayImage}" alt="手書き回答" /></div>`
+            : `<div class="board-tile-answer-text">${escapeHtml(text)}</div>`
+        )
         : `<div class="board-tile-placeholder-name">${escapeHtml(player.name)}</div>`;
 
       const nextHtml = `
