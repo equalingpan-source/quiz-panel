@@ -72,6 +72,18 @@ h2 {
   padding-top: 32px;
 }
 
+.player-result-label {
+  visibility: hidden;
+  min-height: 20px;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.9rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.player-compose.result-correct .player-result-label {
+  visibility: visible;
+}
 .panel {
   background: var(--panel);
   border: 1px solid var(--line);
