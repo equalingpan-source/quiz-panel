@@ -19,6 +19,8 @@ const queryName = String(params.get('name') || '').trim();
 let currentRoom = null;
 let syncTimer = null;
 let lastSyncedText = '';
+let pendingDraftText = '';
+let isComposing = false;
 
 let entry = null;
 try {
@@ -94,12 +96,18 @@ function applyRoom(room) {
 
   const draftText = room.me?.draftText || '';
   lastSyncedText = draftText;
+  const localText = normalizeAnswer(answerInput.value);
+  const shouldKeepLocalDraft = !isComposing
+    && !!pendingDraftText
+    && pendingDraftText !== draftText
+    && localText === pendingDraftText;
 
-  if (answerInput.value !== draftText) {
+  if (!shouldKeepLocalDraft && answerInput.value !== draftText) {
     answerInput.value = draftText;
   }
 
-  syncCounter(draftText);
+  const displayText = shouldKeepLocalDraft ? pendingDraftText : draftText;
+  syncCounter(displayText);
 
   const isInputLockedByHost = !room.inputEnabled;
   const isSelfLocked = !!room.me?.locked;
@@ -110,6 +118,10 @@ function applyRoom(room) {
   submitAnswerBtn.disabled = isLocked;
   playerCompose.classList.toggle('is-locked', isLocked);
 
+  if (isLocked || draftText === pendingDraftText) {
+    pendingDraftText = '';
+  }
+
   const result = room.me?.result || 'pending';
   const shouldShowCorrect = result === 'correct' && room.revealMode === 2;
   playerCompose.classList.toggle('result-correct', shouldShowCorrect);
@@ -117,10 +129,14 @@ function applyRoom(room) {
 
 function scheduleSync() {
   if (!currentRoom) return;
+  if (isComposing) return;
 
   const nextText = normalizeAnswer(answerInput.value);
-  answerInput.value = nextText;
+  if (answerInput.value !== nextText) {
+    answerInput.value = nextText;
+  }
   syncCounter(nextText);
+  pendingDraftText = nextText;
 
   if (!currentRoom.inputEnabled || nextText === lastSyncedText) {
     return;
@@ -131,6 +147,9 @@ function scheduleSync() {
     socket.emit('player:updateDraft', { roomCode: currentRoom.code, text: nextText }, (response) => {
       if (response.ok) {
         lastSyncedText = response.me?.draftText || '';
+        if (lastSyncedText === pendingDraftText) {
+          pendingDraftText = '';
+        }
       }
     });
   }, 80);
@@ -151,6 +170,15 @@ function joinRoom() {
 }
 
 answerInput.addEventListener('input', () => {
+  scheduleSync();
+});
+
+answerInput.addEventListener('compositionstart', () => {
+  isComposing = true;
+});
+
+answerInput.addEventListener('compositionend', () => {
+  isComposing = false;
   scheduleSync();
 });
 
