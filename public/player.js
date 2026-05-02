@@ -29,6 +29,9 @@ let currentMode = 'text';
 let hasHandwritingInk = false;
 let isDrawing = false;
 let activePointerId = null;
+let handwritingSurfaceTone = 'default';
+
+const LEGACY_HANDWRITING_BLUE = { r: 47, g: 87, b: 216 };
 
 function readStoredEntry() {
   try {
@@ -102,6 +105,58 @@ function normalizeAnswerMode(value) {
   return value === 'handwriting' ? 'handwriting' : 'text';
 }
 
+function getHandwritingSurfaceColor() {
+  return handwritingSurfaceTone === 'correct' ? '#d62d2d' : '#2f57d8';
+}
+
+function hexToRgb(hexColor) {
+  const normalized = String(hexColor || '').replace('#', '');
+  if (normalized.length !== 6) {
+    return null;
+  }
+
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16),
+  };
+}
+
+function isNearColor(red, green, blue, target, tolerance = 20) {
+  return Math.abs(red - target.r) <= tolerance
+    && Math.abs(green - target.g) <= tolerance
+    && Math.abs(blue - target.b) <= tolerance;
+}
+
+function replaceCanvasBackground(targetColor) {
+  const imageData = handwritingContext.getImageData(0, 0, handwritingCanvas.width, handwritingCanvas.height);
+  const pixels = imageData.data;
+  const targetRgb = hexToRgb(targetColor);
+
+  if (!targetRgb) {
+    return;
+  }
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index];
+    const green = pixels[index + 1];
+    const blue = pixels[index + 2];
+    const alpha = pixels[index + 3];
+
+    if (alpha < 220) {
+      continue;
+    }
+
+    if (isNearColor(red, green, blue, LEGACY_HANDWRITING_BLUE)) {
+      pixels[index] = targetRgb.r;
+      pixels[index + 1] = targetRgb.g;
+      pixels[index + 2] = targetRgb.b;
+    }
+  }
+
+  handwritingContext.putImageData(imageData, 0, 0);
+}
+
 function syncCounter() {
   if (currentMode === 'handwriting') {
     charCounter.textContent = hasHandwritingInk ? '手書き入力あり' : '手書き入力待ち';
@@ -128,7 +183,7 @@ function paintCanvasSurface() {
 
   handwritingContext.setTransform(1, 0, 0, 1, 0, 0);
   handwritingContext.clearRect(0, 0, handwritingCanvas.width, handwritingCanvas.height);
-  handwritingContext.fillStyle = '#2f57d8';
+  handwritingContext.fillStyle = getHandwritingSurfaceColor();
   handwritingContext.fillRect(0, 0, handwritingCanvas.width, handwritingCanvas.height);
   handwritingContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
   handwritingContext.strokeStyle = '#ffffff';
@@ -160,6 +215,7 @@ function loadHandwritingFromDataUrl(dataUrl) {
     const targetHeight = Math.max(handwritingCanvas.clientHeight, Math.round(handwritingCanvas.height / Math.max(1, window.devicePixelRatio || 1)));
     paintCanvasSurface();
     handwritingContext.drawImage(image, 0, 0, targetWidth, targetHeight);
+    replaceCanvasBackground(getHandwritingSurfaceColor());
     hasHandwritingInk = true;
     syncCounter();
   };
@@ -167,7 +223,41 @@ function loadHandwritingFromDataUrl(dataUrl) {
 }
 
 function exportHandwritingDataUrl() {
-  return hasHandwritingInk ? handwritingCanvas.toDataURL('image/png') : '';
+  if (!hasHandwritingInk) {
+    return '';
+  }
+
+  const exportCanvas = document.createElement('canvas');
+  exportCanvas.width = handwritingCanvas.width;
+  exportCanvas.height = handwritingCanvas.height;
+  const exportContext = exportCanvas.getContext('2d');
+
+  exportContext.drawImage(handwritingCanvas, 0, 0);
+
+  const imageData = exportContext.getImageData(0, 0, exportCanvas.width, exportCanvas.height);
+  const pixels = imageData.data;
+  const currentSurfaceRgb = hexToRgb(getHandwritingSurfaceColor());
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index];
+    const green = pixels[index + 1];
+    const blue = pixels[index + 2];
+    const alpha = pixels[index + 3];
+
+    if (alpha < 220) {
+      continue;
+    }
+
+    const isCurrentSurface = currentSurfaceRgb && isNearColor(red, green, blue, currentSurfaceRgb);
+    const isLegacySurface = isNearColor(red, green, blue, LEGACY_HANDWRITING_BLUE);
+
+    if (isCurrentSurface || isLegacySurface) {
+      pixels[index + 3] = 0;
+    }
+  }
+
+  exportContext.putImageData(imageData, 0, 0);
+  return exportCanvas.toDataURL('image/png');
 }
 
 function resizeHandwritingCanvas() {
@@ -256,6 +346,11 @@ function applyRoom(room) {
   const isSelfLocked = !!room.me?.locked;
   const isLocked = !hasModeSelection || isInputLockedByHost || isSelfLocked;
   const modeChanged = normalizeAnswerMode(room.answerMode) !== currentMode;
+  const result = room.me?.result || 'pending';
+  const shouldShowCorrect = result === 'correct' && room.revealMode === 2;
+
+  handwritingSurfaceTone = shouldShowCorrect ? 'correct' : 'default';
+  playerCompose.classList.toggle('result-correct', shouldShowCorrect);
 
   if (isSelfLocked || (wasSelfLocked && !isSelfLocked) || !isDirty) {
     hydrateFromServerDraft(room, room.me);
@@ -284,10 +379,6 @@ function applyRoom(room) {
   }
   playerCompose.classList.toggle('is-locked', isLocked);
   wasSelfLocked = isSelfLocked;
-
-  const result = room.me?.result || 'pending';
-  const shouldShowCorrect = result === 'correct' && room.revealMode === 2;
-  playerCompose.classList.toggle('result-correct', shouldShowCorrect);
   syncCounter();
 }
 
