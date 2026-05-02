@@ -19,6 +19,7 @@ const MAX_ANSWER_LENGTH = 24;
 const MAX_DRAWING_DATA_URL_LENGTH = 450 * 1024;
 const HOST_RECONNECT_GRACE_MS = 60 * 1000;
 const PLAYER_RECONNECT_GRACE_MS = 10 * 60 * 1000;
+const ROOM_PHASES = new Set(['setup', 'open', 'locked', 'revealAnswers', 'revealResults']);
 const rooms = new Map();
 
 function makeRoomCode() {
@@ -57,6 +58,24 @@ function parseRoomAnswerMode(value) {
   return '';
 }
 
+function normalizeRoomPhase(value) {
+  return ROOM_PHASES.has(value) ? value : 'setup';
+}
+
+function isRevealPhase(phase) {
+  return phase === 'revealAnswers' || phase === 'revealResults';
+}
+
+function phaseAllowsInput(phase) {
+  return phase === 'open';
+}
+
+function phaseToRevealMode(phase) {
+  if (phase === 'revealAnswers') return 1;
+  if (phase === 'revealResults') return 2;
+  return 0;
+}
+
 function normalizeDrawingDataUrl(value) {
   const normalized = String(value || '').trim();
   if (!normalized) return '';
@@ -86,9 +105,8 @@ function createRoom(hostSocketId) {
     code,
     hostSocketId,
     hostDisconnectTimer: null,
+    phase: 'setup',
     answerMode: '',
-    inputEnabled: false,
-    revealMode: 0, // 0: Hidden, 1: Open Answers, 2: Reveal Correct
     nextSlot: 1,
     players: new Map(),
     monitorSocketIds: new Set(),
@@ -153,11 +171,13 @@ function serializeBoard(room) {
 
 function serializeHostRoom(room) {
   const board = serializeBoard(room);
+  const phase = normalizeRoomPhase(room.phase);
   return {
     code: room.code,
+    phase,
     answerMode: room.answerMode,
-    inputEnabled: room.inputEnabled,
-    revealMode: room.revealMode,
+    inputEnabled: phaseAllowsInput(phase),
+    revealMode: phaseToRevealMode(phase),
     playerCount: board.length,
     board,
   };
@@ -165,11 +185,13 @@ function serializeHostRoom(room) {
 
 function serializePlayerRoom(room, playerId) {
   const player = room.players.get(playerId);
+  const phase = normalizeRoomPhase(room.phase);
   return {
     code: room.code,
+    phase,
     answerMode: room.answerMode,
-    inputEnabled: room.inputEnabled,
-    revealMode: room.revealMode,
+    inputEnabled: phaseAllowsInput(phase),
+    revealMode: phaseToRevealMode(phase),
     me: player
       ? {
           id: player.id,
@@ -185,11 +207,13 @@ function serializePlayerRoom(room, playerId) {
 }
 
 function serializeMonitorRoom(room) {
+  const phase = normalizeRoomPhase(room.phase);
   return {
     code: room.code,
+    phase,
     answerMode: room.answerMode,
-    inputEnabled: room.inputEnabled,
-    revealMode: room.revealMode,
+    inputEnabled: phaseAllowsInput(phase),
+    revealMode: phaseToRevealMode(phase),
     board: serializeBoard(room).map((player) => ({
       id: player.id,
       slot: player.slot,
@@ -243,9 +267,8 @@ function clearRound(room) {
     player.locked = false;
   }
 
+  room.phase = 'setup';
   room.answerMode = '';
-  room.inputEnabled = false;
-  room.revealMode = 0;
   room.revealedAnswers.clear();
 }
 
@@ -257,18 +280,31 @@ function requestPlayerLocks(room) {
   }
 }
 
-function setRevealMode(room, mode) {
-  if (mode === 1 || mode === 2) {
-    if (room.revealMode === 0) {
-      room.revealedAnswers.clear();
-      for (const player of room.players.values()) {
-        room.revealedAnswers.set(player.id, snapshotCommittedAnswer(player));
-      }
+function setRoomPhase(room, nextPhase) {
+  const previousPhase = normalizeRoomPhase(room.phase);
+  const normalizedNextPhase = normalizeRoomPhase(nextPhase);
+
+  if (previousPhase === normalizedNextPhase) {
+    return { changed: false, shouldRequestLocks: false };
+  }
+
+  const wasRevealPhase = isRevealPhase(previousPhase);
+  const willRevealPhase = isRevealPhase(normalizedNextPhase);
+
+  if (willRevealPhase && !wasRevealPhase) {
+    room.revealedAnswers.clear();
+    for (const player of room.players.values()) {
+      room.revealedAnswers.set(player.id, snapshotCommittedAnswer(player));
     }
-  } else {
+  } else if (!willRevealPhase && wasRevealPhase) {
     room.revealedAnswers.clear();
   }
-  room.revealMode = mode;
+
+  room.phase = normalizedNextPhase;
+  return {
+    changed: true,
+    shouldRequestLocks: previousPhase === 'open' && normalizedNextPhase === 'locked',
+  };
 }
 
 function attachHost(room, socket) {
@@ -416,31 +452,11 @@ io.on('connection', (socket) => {
     emitRoomState(room);
   });
 
-  socket.on('host:setInputEnabled', ({ roomCode, inputEnabled }, ack = () => {}) => {
-    const room = requireHost(roomCode, socket, ack);
-    if (!room) return;
-
-    const nextEnabled = inputEnabled !== false;
-    if (nextEnabled && !room.answerMode) {
-      ack({ ok: false, message: '先に回答方法を選んでから回答受付を開始してください。' });
-      return;
-    }
-    const shouldRequestLocks = room.inputEnabled && !nextEnabled;
-
-    room.inputEnabled = nextEnabled;
-    ack({ ok: true, room: serializeHostRoom(room) });
-    emitRoomState(room);
-
-    if (shouldRequestLocks) {
-      requestPlayerLocks(room);
-    }
-  });
-
   socket.on('host:setAnswerMode', ({ roomCode, mode }, ack = () => {}) => {
     const room = requireHost(roomCode, socket, ack);
     if (!room) return;
 
-    if (room.inputEnabled) {
+    if (normalizeRoomPhase(room.phase) !== 'setup') {
       ack({ ok: false, message: '回答受付中は回答方法を変更できません。いったん受付を終了してください。' });
       return;
     }
@@ -461,14 +477,55 @@ io.on('connection', (socket) => {
     emitRoomState(room);
   });
 
-  socket.on('host:setRevealMode', ({ roomCode, mode }, ack = () => {}) => {
+  socket.on('host:setPhase', ({ roomCode, phase }, ack = () => {}) => {
     const room = requireHost(roomCode, socket, ack);
     if (!room) return;
 
-    setRevealMode(room, Number(mode) || 0);
+    const currentPhase = normalizeRoomPhase(room.phase);
+    const nextPhase = normalizeRoomPhase(phase);
+
+    if (currentPhase === nextPhase) {
+      ack({ ok: true, room: serializeHostRoom(room) });
+      return;
+    }
+
+    if (nextPhase === 'open') {
+      if (currentPhase !== 'setup') {
+        ack({ ok: false, message: '回答受付は準備中のときだけ開始できます。' });
+        return;
+      }
+      if (!room.answerMode) {
+        ack({ ok: false, message: '先に回答方法を選んでから回答受付を開始してください。' });
+        return;
+      }
+    } else if (nextPhase === 'locked') {
+      if (!['open', 'revealAnswers', 'revealResults'].includes(currentPhase)) {
+        ack({ ok: false, message: 'この状態から受付終了にはできません。' });
+        return;
+      }
+    } else if (nextPhase === 'revealAnswers') {
+      if (!['locked', 'revealResults'].includes(currentPhase)) {
+        ack({ ok: false, message: '回答表示は受付終了後に行ってください。' });
+        return;
+      }
+    } else if (nextPhase === 'revealResults') {
+      if (!['locked', 'revealAnswers'].includes(currentPhase)) {
+        ack({ ok: false, message: '正解表示は回答表示の後で行ってください。' });
+        return;
+      }
+    } else {
+      ack({ ok: false, message: '変更先の状態が不正です。' });
+      return;
+    }
+
+    const transition = setRoomPhase(room, nextPhase);
 
     ack({ ok: true, room: serializeHostRoom(room) });
     emitRoomState(room);
+
+    if (transition.shouldRequestLocks) {
+      requestPlayerLocks(room);
+    }
   });
 
   socket.on('host:setResult', ({ roomCode, playerId, result }, ack = () => {}) => {
@@ -568,7 +625,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (!room.inputEnabled || player.locked) {
+    if (!phaseAllowsInput(room.phase) || player.locked) {
       ack({ ok: false, message: '現在は入力ロック中です。' });
       return;
     }
@@ -611,7 +668,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    if (!room.inputEnabled || player.locked) {
+    if (!phaseAllowsInput(room.phase) || player.locked) {
       ack({ ok: false, error: '現在は入力を受け付けていません。' });
       return;
     }

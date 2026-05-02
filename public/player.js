@@ -105,6 +105,10 @@ function normalizeAnswerMode(value) {
   return value === 'handwriting' ? 'handwriting' : 'text';
 }
 
+function getRoomPhase(room) {
+  return room?.phase || 'setup';
+}
+
 function getHandwritingSurfaceColor() {
   return handwritingSurfaceTone === 'correct' ? '#d62d2d' : '#2f57d8';
 }
@@ -341,14 +345,15 @@ function applyRoom(room) {
   const myName = room.me?.name || playerName || '';
   playerNameDisplay.textContent = myName;
 
+  const phase = getRoomPhase(room);
   const hasModeSelection = room.answerMode === 'text' || room.answerMode === 'handwriting';
-  const isInputLockedByHost = !room.inputEnabled;
+  const isInputLockedByHost = phase !== 'open';
   const isSelfLocked = !!room.me?.locked;
   const isLocked = !hasModeSelection || isInputLockedByHost || isSelfLocked;
   const modeChanged = normalizeAnswerMode(room.answerMode) !== currentMode;
   const result = room.me?.result || 'pending';
-  const shouldShowCorrect = result === 'correct' && room.revealMode === 2;
-  const isReceptionClosed = hasModeSelection && isInputLockedByHost && !shouldShowCorrect;
+  const shouldShowCorrect = result === 'correct' && phase === 'revealResults';
+  const isReceptionClosed = hasModeSelection && phase !== 'setup' && phase !== 'open' && !shouldShowCorrect;
 
   handwritingSurfaceTone = shouldShowCorrect ? 'correct' : 'default';
   playerCompose.classList.toggle('result-correct', shouldShowCorrect);
@@ -371,11 +376,16 @@ function applyRoom(room) {
     handwritingInputPanel.classList.add('hidden');
     playerWaitText.textContent = '親機の準備が終わるまでお待ちください。';
     charCounter.textContent = '準備中';
-  } else if (!room.inputEnabled && !isSelfLocked) {
+  } else if (phase === 'setup' && !isSelfLocked) {
     playerWaitPanel.classList.remove('hidden');
     textInputPanel.classList.add('hidden');
     handwritingInputPanel.classList.add('hidden');
     playerWaitText.textContent = '回答受付が始まるまでお待ちください。';
+  } else if (phase !== 'open' && !isSelfLocked) {
+    playerWaitPanel.classList.remove('hidden');
+    textInputPanel.classList.add('hidden');
+    handwritingInputPanel.classList.add('hidden');
+    playerWaitText.textContent = '回答受付は終了しました。';
   } else {
     playerWaitPanel.classList.add('hidden');
   }
@@ -436,7 +446,7 @@ clearAnswerBtn.addEventListener('click', () => {
 });
 
 submitAnswerBtn.addEventListener('click', () => {
-  if (!currentRoom || !currentRoom.inputEnabled) return;
+  if (!currentRoom || getRoomPhase(currentRoom) !== 'open') return;
 
   const payload = getCurrentAnswerPayload();
 

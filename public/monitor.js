@@ -19,6 +19,10 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function getRoomPhase(room) {
+  return room?.phase || 'setup';
+}
+
 function fitAnswerText(element, container) {
   if (!element || !container) return;
 
@@ -74,14 +78,14 @@ function scheduleRefit() {
 }
 
 function applyRoom(room) {
-  const mode = room.revealMode || 0;
+  const phase = getRoomPhase(room);
 
   if (monitorShell) {
-    monitorShell.classList.toggle('mode-answers', mode === 1);
-    monitorShell.classList.toggle('mode-correct', mode === 2);
+    monitorShell.classList.toggle('mode-answers', phase === 'revealAnswers');
+    monitorShell.classList.toggle('mode-correct', phase === 'revealResults');
   }
 
-  const showAnswers = mode > 0;
+  const showAnswers = phase === 'revealAnswers' || phase === 'revealResults';
   const playerCount = room.board.length;
   const isSingleLayout = playerCount === 1;
 
@@ -125,12 +129,12 @@ function applyRoom(room) {
         monitorBoard.appendChild(card);
       }
 
-      const shouldShowRed = player.result === 'correct' && mode === 2;
-      const isLockedVisual = !room.inputEnabled || !!player.locked;
+      const shouldShowRed = player.result === 'correct' && phase === 'revealResults';
+      const isLockedVisual = phase !== 'open' || !!player.locked;
 
       card.classList.toggle('is-correct', shouldShowRed);
       card.classList.toggle('is-locked-visual', isLockedVisual);
-      card.classList.toggle('is-hidden-state', mode === 0);
+      card.classList.toggle('is-hidden-state', !showAnswers);
 
       const text = player.displayText || ' ';
       const isHandwriting = player.displayMode === 'handwriting' && !!player.displayImage;
