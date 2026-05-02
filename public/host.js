@@ -162,6 +162,7 @@ function renderPlayerCards(room) {
       card.classList.add('host-answer-card');
       const phase = getRoomPhase(room);
       const canToggleResult = phase === 'locked' || phase === 'revealAnswers' || phase === 'revealResults';
+      const canUnlockPlayer = phase === 'open' && player.locked && player.connected;
 
       const isCorrect = player.result === 'correct';
       const isLockedVisual = phase !== 'open' || !!player.locked;
@@ -199,11 +200,12 @@ function renderPlayerCards(room) {
           <span class="host-card-name">${escapeHtml(player.name)}</span>
         </div>
         <div class="host-lock-indicator"></div>
+        ${canUnlockPlayer ? '<button class="host-card-unlock" type="button">解除</button>' : ''}
         ${canRemovePlayer ? '<button class="host-card-remove" type="button">削除</button>' : ''}
       `;
 
       card.addEventListener('click', (event) => {
-        if (event.target.closest('.host-card-remove')) {
+        if (event.target.closest('.host-card-remove') || event.target.closest('.host-card-unlock')) {
           return;
         }
         if (!canToggleResult) {
@@ -242,6 +244,22 @@ function renderPlayerCards(room) {
             }
 
             setMessage(controlMessage, `${player.name} を一覧から削除しました。`, 'ok');
+          });
+        });
+      }
+
+      const unlockBtn = card.querySelector('.host-card-unlock');
+      if (unlockBtn) {
+        unlockBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+
+          socket.emit('host:unlockPlayer', { roomCode: room.code, playerId: player.id }, (response) => {
+            if (!response.ok) {
+              setMessage(controlMessage, response.message, 'warn');
+              return;
+            }
+
+            setMessage(controlMessage, `${player.name} の回答を再編集できるようにしました。`, 'ok');
           });
         });
       }
@@ -341,11 +359,11 @@ function getPrimaryActionConfig(room) {
 
   if (phase === 'locked') {
     return {
-      label: '回答終了',
-      className: 'button-danger',
-      targetPhase: '',
-      successMessage: '',
-      disabled: true,
+      label: '締め切り解除',
+      className: 'button-success',
+      targetPhase: 'open',
+      successMessage: '回答受付を再開しました。',
+      disabled: false,
     };
   }
 

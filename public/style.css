@@ -547,7 +547,29 @@ textarea {
   cursor: pointer;
 }
 
+.host-card-unlock {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+  z-index: 3;
+}
+
 .host-answer-card.is-locked-visual:not(.is-correct) .host-card-remove {
+  border-color: rgba(65, 80, 106, 0.34);
+  background: rgba(255, 255, 255, 0.5);
+  color: #41506a;
+}
+
+.host-answer-card.is-locked-visual:not(.is-correct) .host-card-unlock {
   border-color: rgba(65, 80, 106, 0.34);
   background: rgba(255, 255, 255, 0.5);
   color: #41506a;

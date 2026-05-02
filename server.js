@@ -492,8 +492,8 @@ io.on('connection', (socket) => {
     }
 
     if (nextPhase === 'open') {
-      if (currentPhase !== 'setup') {
-        ack({ ok: false, message: '回答受付は準備中のときだけ開始できます。' });
+      if (!['setup', 'locked'].includes(currentPhase)) {
+        ack({ ok: false, message: '回答受付は準備中か受付終了から再開できます。' });
         return;
       }
       if (!room.answerMode) {
@@ -562,6 +562,27 @@ io.on('connection', (socket) => {
 
     room.players.delete(player.id);
     room.revealedAnswers.delete(player.id);
+    ack({ ok: true, room: serializeHostRoom(room) });
+    emitRoomState(room);
+  });
+
+  socket.on('host:unlockPlayer', ({ roomCode, playerId }, ack = () => {}) => {
+    const room = requireHost(roomCode, socket, ack);
+    if (!room) return;
+
+    if (normalizeRoomPhase(room.phase) !== 'open') {
+      ack({ ok: false, message: '個別解除は回答受付中だけ行えます。' });
+      return;
+    }
+
+    const player = room.players.get(String(playerId || ''));
+    if (!player) {
+      ack({ ok: false, message: '対象の子機が見つかりません。' });
+      return;
+    }
+
+    player.locked = false;
+    player.result = 'pending';
     ack({ ok: true, room: serializeHostRoom(room) });
     emitRoomState(room);
   });
