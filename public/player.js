@@ -30,17 +30,45 @@ let hasHandwritingInk = false;
 let isDrawing = false;
 let activePointerId = null;
 
-let entry = null;
-try {
-  entry = JSON.parse(sessionStorage.getItem(PLAYER_ENTRY_KEY) || 'null');
-} catch (_error) {
-  entry = null;
+function readStoredEntry() {
+  try {
+    const sessionEntry = JSON.parse(sessionStorage.getItem(PLAYER_ENTRY_KEY) || 'null');
+    if (sessionEntry && typeof sessionEntry === 'object') {
+      return sessionEntry;
+    }
+  } catch (_error) {
+    // ignore storage failures
+  }
+
+  try {
+    const localEntry = JSON.parse(localStorage.getItem(PLAYER_ENTRY_KEY) || 'null');
+    if (localEntry && typeof localEntry === 'object') {
+      return localEntry;
+    }
+  } catch (_error) {
+    // ignore storage failures
+  }
+
+  return null;
 }
 
+function writeStoredEntry(entry) {
+  const payload = JSON.stringify(entry);
+  sessionStorage.setItem(PLAYER_ENTRY_KEY, payload);
+  localStorage.setItem(PLAYER_ENTRY_KEY, payload);
+}
+
+function clearStoredEntry() {
+  sessionStorage.removeItem(PLAYER_ENTRY_KEY);
+  localStorage.removeItem(PLAYER_ENTRY_KEY);
+}
+
+const entry = readStoredEntry();
 const hasMatchingEntry = String(entry?.roomCode || '').trim().toUpperCase() === presetRoomCode;
 const playerName = String((hasMatchingEntry ? entry?.name : '') || queryName).trim();
+const playerToken = String(entry?.playerToken || '').trim();
 
-if (!presetRoomCode || !playerName) {
+if (!presetRoomCode || !playerName || !playerToken) {
   const fallbackUrl = new URL('/player-entry.html', window.location.origin);
   if (presetRoomCode) {
     fallbackUrl.searchParams.set('room', presetRoomCode);
@@ -50,13 +78,11 @@ if (!presetRoomCode || !playerName) {
 
 if (!hasMatchingEntry || entry?.name !== playerName) {
   try {
-    sessionStorage.setItem(
-      PLAYER_ENTRY_KEY,
-      JSON.stringify({
-        roomCode: presetRoomCode,
-        name: playerName,
-      })
-    );
+    writeStoredEntry({
+      roomCode: presetRoomCode,
+      name: playerName,
+      playerToken,
+    });
   } catch (_error) {
     // fallback remains the query string for this tab
   }
@@ -266,15 +292,20 @@ function applyRoom(room) {
 }
 
 function joinRoom() {
-  socket.emit('player:join', { roomCode: presetRoomCode, name: playerName }, (response) => {
+  socket.emit('player:join', { roomCode: presetRoomCode, name: playerName, playerToken }, (response) => {
     if (!response.ok) {
       const fallbackUrl = new URL('/player-entry.html', window.location.origin);
       fallbackUrl.searchParams.set('room', presetRoomCode);
-      sessionStorage.removeItem(PLAYER_ENTRY_KEY);
+      clearStoredEntry();
       window.location.replace(fallbackUrl.toString());
       return;
     }
 
+    writeStoredEntry({
+      roomCode: presetRoomCode,
+      name: response.room?.me?.name || playerName,
+      playerToken,
+    });
     applyRoom(response.room);
   });
 }
@@ -394,10 +425,13 @@ socket.on('room:closed', () => {
   playerCompose.classList.add('is-locked');
 });
 
+socket.on('connect', () => {
+  joinRoom();
+});
+
 window.addEventListener('resize', () => {
   resizeHandwritingCanvas();
 });
 
-joinRoom();
 resizeHandwritingCanvas();
 updateModeUi();

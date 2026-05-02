@@ -18,6 +18,7 @@ const MAX_NAME_LENGTH = 12;
 const MAX_ANSWER_LENGTH = 24;
 const MAX_DRAWING_DATA_URL_LENGTH = 450 * 1024;
 const HOST_RECONNECT_GRACE_MS = 60 * 1000;
+const PLAYER_RECONNECT_GRACE_MS = 10 * 60 * 1000;
 const rooms = new Map();
 
 function makeRoomCode() {
@@ -100,6 +101,14 @@ function createRoom(hostSocketId) {
 
 function getSortedPlayers(room) {
   return Array.from(room.players.values()).sort((left, right) => left.slot - right.slot);
+}
+
+function getPlayerBySocketId(room, socketId) {
+  return Array.from(room.players.values()).find((player) => player.currentSocketId === socketId) || null;
+}
+
+function getPlayerByToken(room, playerToken) {
+  return room.players.get(String(playerToken || '').trim());
 }
 
 function getCommittedAnswer(player) {
@@ -200,7 +209,9 @@ function emitRoomState(room) {
   }
 
   for (const player of room.players.values()) {
-    io.to(player.id).emit('player:room', serializePlayerRoom(room, player.id));
+    if (player.currentSocketId) {
+      io.to(player.currentSocketId).emit('player:room', serializePlayerRoom(room, player.id));
+    }
   }
 
   for (const monitorId of room.monitorSocketIds) {
@@ -220,6 +231,10 @@ function requireHost(roomCode, socket, ack) {
 
 function clearRound(room) {
   for (const player of room.players.values()) {
+    if (player.disconnectTimer) {
+      clearTimeout(player.disconnectTimer);
+      player.disconnectTimer = null;
+    }
     player.draftText = '';
     player.drawingDataUrl = '';
     player.answerMode = '';
@@ -236,8 +251,8 @@ function clearRound(room) {
 
 function requestPlayerLocks(room) {
   for (const player of room.players.values()) {
-    if (!player.locked) {
-      io.to(player.id).emit('player:forceLock', { roomCode: room.code });
+    if (!player.locked && player.currentSocketId) {
+      io.to(player.currentSocketId).emit('player:forceLock', { roomCode: room.code });
     }
   }
 }
@@ -268,7 +283,11 @@ function attachHost(room, socket) {
   socket.data.roomCode = room.code;
 }
 
-function scheduleRoomClose(room) {
+function scheduleRoomClose(room, socketId) {
+  if (room.hostSocketId !== socketId) {
+    return;
+  }
+
   room.hostSocketId = null;
 
   if (room.hostDisconnectTimer) {
@@ -286,8 +305,45 @@ function closeRoom(room) {
     room.hostDisconnectTimer = null;
   }
 
+  for (const player of room.players.values()) {
+    if (player.disconnectTimer) {
+      clearTimeout(player.disconnectTimer);
+      player.disconnectTimer = null;
+    }
+  }
+
   io.to(room.code).emit('room:closed');
   rooms.delete(room.code);
+}
+
+function attachPlayerSocket(room, player, socket) {
+  if (player.disconnectTimer) {
+    clearTimeout(player.disconnectTimer);
+    player.disconnectTimer = null;
+  }
+
+  player.currentSocketId = socket.id;
+  socket.join(room.code);
+  socket.data.role = 'player';
+  socket.data.roomCode = room.code;
+  socket.data.playerId = player.id;
+}
+
+function schedulePlayerDisconnect(room, playerId, socketId) {
+  const player = room.players.get(playerId);
+  if (!player) return;
+  if (player.currentSocketId !== socketId) return;
+
+  player.currentSocketId = null;
+  if (player.disconnectTimer) {
+    clearTimeout(player.disconnectTimer);
+  }
+
+  player.disconnectTimer = setTimeout(() => {
+    room.players.delete(playerId);
+    room.revealedAnswers.delete(playerId);
+    emitRoomState(room);
+  }, PLAYER_RECONNECT_GRACE_MS);
 }
 
 app.use(express.static(path.join(__dirname, 'public')));
@@ -439,9 +495,10 @@ io.on('connection', (socket) => {
     emitRoomState(room);
   });
 
-  socket.on('player:join', ({ roomCode, name }, ack = () => {}) => {
+  socket.on('player:join', ({ roomCode, name, playerToken }, ack = () => {}) => {
     const room = getRoom(roomCode);
     const normalizedName = normalizeName(name);
+    const normalizedToken = String(playerToken || '').trim();
 
     if (!room) {
       ack({ ok: false, message: 'ルームが見つかりません。' });
@@ -453,8 +510,27 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const player = {
-      id: socket.id,
+    if (!normalizedToken) {
+      ack({ ok: false, message: '参加情報が不足しています。参加し直してください。' });
+      return;
+    }
+
+    let player = getPlayerByToken(room, normalizedToken);
+    if (player) {
+      player.name = normalizedName;
+      attachPlayerSocket(room, player, socket);
+
+      ack({
+        ok: true,
+        room: serializePlayerRoom(room, player.id),
+        player: { id: player.id, name: player.name },
+      });
+      emitRoomState(room);
+      return;
+    }
+
+    player = {
+      id: normalizedToken,
       slot: room.nextSlot,
       name: normalizedName,
       draftText: '',
@@ -463,13 +539,13 @@ io.on('connection', (socket) => {
       lastEditedAt: null,
       result: 'pending',
       locked: false,
+      currentSocketId: null,
+      disconnectTimer: null,
     };
 
     room.nextSlot += 1;
-    room.players.set(socket.id, player);
-    socket.join(room.code);
-    socket.data.role = 'player';
-    socket.data.roomCode = room.code;
+    room.players.set(player.id, player);
+    attachPlayerSocket(room, player, socket);
 
     ack({
       ok: true,
@@ -486,7 +562,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const player = room.players.get(socket.id);
+    const player = getPlayerBySocketId(room, socket.id);
     if (!player) {
       ack({ ok: false, message: '子機として参加できていません。' });
       return;
@@ -529,7 +605,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const player = room.players.get(socket.id);
+    const player = getPlayerBySocketId(room, socket.id);
     if (!player) {
       ack({ ok: false, error: '参加できていません。' });
       return;
@@ -574,7 +650,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const player = room.players.get(socket.id);
+    const player = getPlayerBySocketId(room, socket.id);
     if (!player) {
       ack({ ok: false, error: '参加情報が見つかりません。' });
       return;
@@ -620,7 +696,7 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     if (role === 'host') {
-      scheduleRoomClose(room);
+      scheduleRoomClose(room, socket.id);
       return;
     }
 
@@ -630,8 +706,7 @@ io.on('connection', (socket) => {
     }
 
     if (role === 'player') {
-      room.players.delete(socket.id);
-      room.revealedAnswers.delete(socket.id);
+      schedulePlayerDisconnect(room, socket.data.playerId, socket.id);
       emitRoomState(room);
     }
   });
