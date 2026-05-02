@@ -178,8 +178,8 @@ function renderPlayerCards(room) {
       else fontSize = '1.1rem';
 
       const answerMarkup = isHandwriting
-        ? '<div class="host-card-drawing"><img class="host-card-image" src="' + player.answerImage + '" alt="手書き回答" /></div>'
-        : `<div class="host-card-text" style="font-size: ${fontSize}">${escapeHtml(text)}</div>`;
+        ? '<img class="host-card-surface host-card-image" src="' + player.answerImage + '" alt="手書き回答" />'
+        : `<div class="host-card-surface host-card-text" style="font-size: ${fontSize}">${escapeHtml(text)}</div>`;
 
       card.innerHTML = `
         <div class="host-card-header">
