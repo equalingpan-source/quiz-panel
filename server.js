@@ -106,7 +106,7 @@ function createRoom(hostSocketId) {
     hostSocketId,
     hostDisconnectTimer: null,
     phase: 'setup',
-    answerMode: '',
+    answerMode: 'text',
     nextSlot: 1,
     players: new Map(),
     monitorSocketIds: new Set(),
@@ -261,14 +261,14 @@ function clearRound(room) {
     }
     player.draftText = '';
     player.drawingDataUrl = '';
-    player.answerMode = '';
+    player.answerMode = 'text';
     player.lastEditedAt = null;
     player.result = 'pending';
     player.locked = false;
   }
 
   room.phase = 'setup';
-  room.answerMode = '';
+  room.answerMode = 'text';
   room.revealedAnswers.clear();
 }
 
@@ -457,7 +457,7 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     if (normalizeRoomPhase(room.phase) !== 'setup') {
-      ack({ ok: false, message: '回答受付中は回答方法を変更できません。いったん受付を終了してください。' });
+      ack({ ok: false, message: '回答方法は準備中だけ変更できます。次の問題に切り替えてから変更してください。' });
       return;
     }
 

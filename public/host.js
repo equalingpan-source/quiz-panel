@@ -15,6 +15,7 @@ const roomCodeEl = document.getElementById('roomCode');
 const toggleInputBtn = document.getElementById('toggleInputBtn');
 const toggleDisplayBtn = document.getElementById('toggleDisplayBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
+const monitorWaitBtn = document.getElementById('monitorWaitBtn');
 const modeTextBtn = document.getElementById('modeTextBtn');
 const modeHandwritingBtn = document.getElementById('modeHandwritingBtn');
 const hostCurrentModePill = document.getElementById('hostCurrentModePill');
@@ -273,14 +274,11 @@ async function loadNetworkCandidates() {
 function renderAnswerMode(room) {
   const phase = getRoomPhase(room);
   const isHandwriting = room.answerMode === 'handwriting';
-  const isSelected = room.answerMode === 'text' || room.answerMode === 'handwriting';
   modeTextBtn.className = `button host-mode-button${!isHandwriting ? ' button-primary' : ''}`;
   modeHandwritingBtn.className = `button host-mode-button${isHandwriting ? ' button-primary' : ''}`;
   modeTextBtn.disabled = phase !== 'setup';
   modeHandwritingBtn.disabled = phase !== 'setup';
-  hostCurrentModePill.textContent = isSelected
-    ? `回答方法: ${isHandwriting ? '手書き' : '通常入力'}`
-    : '回答方法: 未選択';
+  hostCurrentModePill.textContent = `回答方法: ${isHandwriting ? '手書き' : '通常入力'}`;
 }
 
 function configureActionButton(button, config) {
@@ -294,11 +292,10 @@ function configureActionButton(button, config) {
 function getPrimaryActionConfig(room) {
   const phase = getRoomPhase(room);
   const hasMode = room.answerMode === 'text' || room.answerMode === 'handwriting';
-  const hasPlayers = room.playerCount > 0;
 
   if (phase === 'setup') {
     return {
-      label: '回答受付を開始',
+      label: '回答開始',
       className: 'button-success',
       targetPhase: 'open',
       successMessage: '回答受付を開始しました。',
@@ -308,7 +305,7 @@ function getPrimaryActionConfig(room) {
 
   if (phase === 'open') {
     return {
-      label: '回答受付を終了',
+      label: '回答終了',
       className: 'button-danger',
       targetPhase: 'locked',
       successMessage: '回答受付を終了しました。',
@@ -318,63 +315,35 @@ function getPrimaryActionConfig(room) {
 
   if (phase === 'locked') {
     return {
-      label: '回答を表示',
-      className: 'button-primary',
-      targetPhase: 'revealAnswers',
-      successMessage: '全員の回答を表示しました。',
-      disabled: !hasPlayers,
-    };
-  }
-
-  if (phase === 'revealAnswers') {
-    return {
-      label: '正解を表示',
+      label: '回答終了',
       className: 'button-danger',
-      targetPhase: 'revealResults',
-      successMessage: '正解表示に切り替えました。',
-      disabled: !hasPlayers,
+      targetPhase: '',
+      successMessage: '',
+      disabled: true,
     };
   }
 
+  if (phase === 'revealAnswers' || phase === 'revealResults') {
+    return {
+      label: '次の回答を表示',
+      className: 'button-success',
+      targetPhase: 'nextRound',
+      successMessage: '次の問題に切り替えました。',
+      disabled: false,
+    };
+  }
   return {
-    label: '表示を閉じる',
-    className: '',
-    targetPhase: 'locked',
-    successMessage: '表示を閉じました。',
+    label: '回答開始',
+    className: 'button-success',
+    targetPhase: 'open',
+    successMessage: '回答受付を開始しました。',
     disabled: false,
   };
 }
 
-function getSecondaryActionConfig(room) {
+function getMonitorActionEnabled(room) {
   const phase = getRoomPhase(room);
-
-  if (phase === 'revealAnswers') {
-    return {
-      label: '表示を閉じる',
-      className: '',
-      targetPhase: 'locked',
-      successMessage: '表示を閉じました。',
-      disabled: false,
-    };
-  }
-
-  if (phase === 'revealResults') {
-    return {
-      label: '回答表示に戻る',
-      className: 'button-primary',
-      targetPhase: 'revealAnswers',
-      successMessage: '回答表示に戻しました。',
-      disabled: false,
-    };
-  }
-
-  return {
-    label: phase === 'locked' ? '正解を表示' : '回答を表示',
-    className: '',
-    targetPhase: '',
-    successMessage: '',
-    disabled: true,
-  };
+  return room.playerCount > 0 && phase !== 'setup' && phase !== 'open';
 }
 
 function renderRoom(room) {
@@ -396,17 +365,26 @@ function renderRoom(room) {
     if (phase === 'setup') onAirLabel.textContent = '準備中';
     else if (phase === 'open') onAirLabel.textContent = '回答受付中';
     else if (phase === 'locked') onAirLabel.textContent = '受付終了';
-    else if (phase === 'revealAnswers') onAirLabel.textContent = '回答表示中';
-    else onAirLabel.textContent = '正解表示中';
+    else if (phase === 'revealAnswers') onAirLabel.textContent = 'モニター回答表示中';
+    else onAirLabel.textContent = 'モニター正解表示中';
   }
 
   roomCodeEl.textContent = room.code;
 
   configureActionButton(toggleInputBtn, getPrimaryActionConfig(room));
-  configureActionButton(toggleDisplayBtn, getSecondaryActionConfig(room));
+  const monitorEnabled = getMonitorActionEnabled(room);
 
-  const hasResetTarget = phase !== 'setup' || !!room.answerMode || room.playerCount > 0;
-  clearAllBtn.disabled = !hasResetTarget;
+  toggleDisplayBtn.textContent = 'モニターへ回答表示';
+  toggleDisplayBtn.className = 'button button-primary';
+  toggleDisplayBtn.disabled = !monitorEnabled;
+
+  clearAllBtn.textContent = 'モニターへ正解表示';
+  clearAllBtn.className = 'button button-danger';
+  clearAllBtn.disabled = !monitorEnabled;
+
+  monitorWaitBtn.textContent = 'モニターを待機に戻す';
+  monitorWaitBtn.className = 'button';
+  monitorWaitBtn.disabled = !monitorEnabled || phase === 'locked';
 
   renderAnswerMode(room);
   renderPlayerCards(room);
@@ -439,6 +417,22 @@ function changeRoomPhase(targetPhase, successMessage) {
   });
 }
 
+function goToNextRound() {
+  if (!currentRoom) return;
+
+  const confirmed = confirm('現在の回答をリセットしていいですか？');
+  if (!confirmed) return;
+
+  socket.emit('host:clearAll', { roomCode: currentRoom.code }, (response) => {
+    if (!response.ok) {
+      setMessage(controlMessage, response.message, 'warn');
+      return;
+    }
+
+    setMessage(controlMessage, '次の問題に切り替えました。', 'ok');
+  });
+}
+
 createRoomBtn.addEventListener('click', () => {
   socket.emit('host:create', {}, (response) => {
     if (!response.ok) {
@@ -453,27 +447,20 @@ createRoomBtn.addEventListener('click', () => {
 });
 
 toggleInputBtn.addEventListener('click', () => {
+  if (toggleInputBtn.dataset.targetPhase === 'nextRound') {
+    goToNextRound();
+    return;
+  }
+
   changeRoomPhase(toggleInputBtn.dataset.targetPhase, toggleInputBtn.dataset.successMessage);
 });
 
 toggleDisplayBtn.addEventListener('click', () => {
-  changeRoomPhase(toggleDisplayBtn.dataset.targetPhase, toggleDisplayBtn.dataset.successMessage);
+  changeRoomPhase('revealAnswers', 'モニターに回答を表示しました。');
 });
 
 clearAllBtn.addEventListener('click', () => {
-  if (!currentRoom) return;
-
-  const confirmed = confirm('全員の回答を消して次の問題に進みますか？');
-  if (!confirmed) return;
-
-  socket.emit('host:clearAll', { roomCode: currentRoom.code }, (response) => {
-    if (!response.ok) {
-      setMessage(controlMessage, response.message, 'warn');
-      return;
-    }
-
-    setMessage(controlMessage, '次の問題の準備ができました。', 'ok');
-  });
+  changeRoomPhase('revealResults', 'モニターに正解を表示しました。');
 });
 
 modeTextBtn.addEventListener('click', () => {
@@ -482,6 +469,10 @@ modeTextBtn.addEventListener('click', () => {
 
 modeHandwritingBtn.addEventListener('click', () => {
   setHostAnswerMode('handwriting');
+});
+
+monitorWaitBtn.addEventListener('click', () => {
+  changeRoomPhase('locked', 'モニターを待機に戻しました。');
 });
 
 playerUrlSelect.addEventListener('change', () => {
