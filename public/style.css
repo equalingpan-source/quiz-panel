@@ -294,8 +294,13 @@ textarea {
   justify-content: flex-end;
 }
 
-.host-action-row .button {
-  flex: 1 1 180px;
+.host-action-row .host-primary-action {
+  flex: 1 1 220px;
+  min-height: 42px;
+}
+
+.host-action-row .host-monitor-action {
+  flex: 0 1 150px;
   min-height: 42px;
 }
 
@@ -525,6 +530,27 @@ textarea {
   font-size: 0.96rem;
   font-weight: 800;
   word-break: break-word;
+}
+
+.host-card-remove {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.host-answer-card.is-locked-visual:not(.is-correct) .host-card-remove {
+  border-color: rgba(65, 80, 106, 0.34);
+  background: rgba(255, 255, 255, 0.5);
+  color: #41506a;
 }
 
 .host-answer-card.is-locked-visual .host-lock-indicator {
@@ -846,6 +872,10 @@ textarea {
   border-radius: 20px;
   background: #f8fbff;
   overflow: hidden;
+}
+
+.host-answer-card.is-clickable {
+  cursor: pointer;
 }
 
 .player-input-panel {

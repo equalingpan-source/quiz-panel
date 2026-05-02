@@ -155,6 +155,7 @@ function serializeBoard(room) {
     id: player.id,
     slot: player.slot,
     name: player.name,
+    connected: !!player.currentSocketId,
     draftText: player.draftText,
     answerText: getCommittedAnswer(player),
     answerImage: getCommittedDrawing(player),
@@ -254,6 +255,7 @@ function requireHost(roomCode, socket, ack) {
 }
 
 function clearRound(room) {
+  const preservedAnswerMode = parseRoomAnswerMode(room.answerMode) || 'text';
   for (const player of room.players.values()) {
     if (player.disconnectTimer) {
       clearTimeout(player.disconnectTimer);
@@ -261,14 +263,14 @@ function clearRound(room) {
     }
     player.draftText = '';
     player.drawingDataUrl = '';
-    player.answerMode = 'text';
+    player.answerMode = preservedAnswerMode;
     player.lastEditedAt = null;
     player.result = 'pending';
     player.locked = false;
   }
 
   room.phase = 'setup';
-  room.answerMode = 'text';
+  room.answerMode = preservedAnswerMode;
   room.revealedAnswers.clear();
 }
 
@@ -539,6 +541,27 @@ io.on('connection', (socket) => {
     }
 
     player.result = result === 'correct' ? 'correct' : 'pending';
+    ack({ ok: true, room: serializeHostRoom(room) });
+    emitRoomState(room);
+  });
+
+  socket.on('host:removePlayer', ({ roomCode, playerId }, ack = () => {}) => {
+    const room = requireHost(roomCode, socket, ack);
+    if (!room) return;
+
+    const player = room.players.get(String(playerId || ''));
+    if (!player) {
+      ack({ ok: false, message: '対象の子機が見つかりません。' });
+      return;
+    }
+
+    if (player.disconnectTimer) {
+      clearTimeout(player.disconnectTimer);
+      player.disconnectTimer = null;
+    }
+
+    room.players.delete(player.id);
+    room.revealedAnswers.delete(player.id);
     ack({ ok: true, room: serializeHostRoom(room) });
     emitRoomState(room);
   });

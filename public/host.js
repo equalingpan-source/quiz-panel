@@ -158,18 +158,19 @@ function renderPlayerCards(room) {
     .slice()
     .sort((left, right) => left.slot - right.slot)
     .forEach((player) => {
-      const card = document.createElement('button');
-      card.type = 'button';
+      const card = document.createElement('div');
       card.classList.add('host-answer-card');
       const phase = getRoomPhase(room);
       const canToggleResult = phase === 'locked' || phase === 'revealAnswers' || phase === 'revealResults';
 
       const isCorrect = player.result === 'correct';
       const isLockedVisual = phase !== 'open' || !!player.locked;
+      const canRemovePlayer = !player.connected;
 
       card.classList.toggle('is-correct', isCorrect);
       card.classList.toggle('is-locked-visual', isLockedVisual);
-      card.disabled = !canToggleResult;
+      card.classList.toggle('is-clickable', canToggleResult);
+      card.classList.toggle('is-disconnected', canRemovePlayer);
 
       const resultLabel = isCorrect ? '正解' : '';
       const text = player.answerText || ' ';
@@ -198,9 +199,17 @@ function renderPlayerCards(room) {
           <span class="host-card-name">${escapeHtml(player.name)}</span>
         </div>
         <div class="host-lock-indicator"></div>
+        ${canRemovePlayer ? '<button class="host-card-remove" type="button">削除</button>' : ''}
       `;
 
-      card.addEventListener('click', () => {
+      card.addEventListener('click', (event) => {
+        if (event.target.closest('.host-card-remove')) {
+          return;
+        }
+        if (!canToggleResult) {
+          return;
+        }
+
         const nextResult = player.result === 'correct' ? 'pending' : 'correct';
 
         socket.emit(
@@ -220,6 +229,22 @@ function renderPlayerCards(room) {
           }
         );
       });
+
+      const removeBtn = card.querySelector('.host-card-remove');
+      if (removeBtn) {
+        removeBtn.addEventListener('click', (event) => {
+          event.stopPropagation();
+
+          socket.emit('host:removePlayer', { roomCode: room.code, playerId: player.id }, (response) => {
+            if (!response.ok) {
+              setMessage(controlMessage, response.message, 'warn');
+              return;
+            }
+
+            setMessage(controlMessage, `${player.name} を一覧から削除しました。`, 'ok');
+          });
+        });
+      }
 
       playerCards.appendChild(card);
     });
@@ -283,7 +308,8 @@ function renderAnswerMode(room) {
 
 function configureActionButton(button, config) {
   button.textContent = config.label;
-  button.className = `button ${config.className}`.trim();
+  const roleClass = button.id === 'toggleInputBtn' ? 'host-primary-action' : 'host-monitor-action';
+  button.className = `button ${roleClass} ${config.className}`.trim();
   button.disabled = !!config.disabled;
   button.dataset.targetPhase = config.targetPhase || '';
   button.dataset.successMessage = config.successMessage || '';
@@ -375,15 +401,15 @@ function renderRoom(room) {
   const monitorEnabled = getMonitorActionEnabled(room);
 
   toggleDisplayBtn.textContent = 'モニターへ回答表示';
-  toggleDisplayBtn.className = 'button button-primary';
+  toggleDisplayBtn.className = 'button host-monitor-action button-primary';
   toggleDisplayBtn.disabled = !monitorEnabled;
 
   clearAllBtn.textContent = 'モニターへ正解表示';
-  clearAllBtn.className = 'button button-danger';
+  clearAllBtn.className = 'button host-monitor-action button-danger';
   clearAllBtn.disabled = !monitorEnabled;
 
   monitorWaitBtn.textContent = 'モニターを待機に戻す';
-  monitorWaitBtn.className = 'button';
+  monitorWaitBtn.className = 'button host-monitor-action';
   monitorWaitBtn.disabled = !monitorEnabled || phase === 'locked';
 
   renderAnswerMode(room);

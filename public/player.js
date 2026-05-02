@@ -376,16 +376,8 @@ function applyRoom(room) {
     handwritingInputPanel.classList.add('hidden');
     playerWaitText.textContent = '親機の準備が終わるまでお待ちください。';
     charCounter.textContent = '準備中';
-  } else if (phase === 'setup' && !isSelfLocked) {
-    playerWaitPanel.classList.remove('hidden');
-    textInputPanel.classList.add('hidden');
-    handwritingInputPanel.classList.add('hidden');
-    playerWaitText.textContent = '回答受付が始まるまでお待ちください。';
   } else if (phase !== 'open' && !isSelfLocked) {
-    playerWaitPanel.classList.remove('hidden');
-    textInputPanel.classList.add('hidden');
-    handwritingInputPanel.classList.add('hidden');
-    playerWaitText.textContent = '回答受付は終了しました。';
+    playerWaitPanel.classList.add('hidden');
   } else {
     playerWaitPanel.classList.add('hidden');
   }
