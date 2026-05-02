@@ -348,9 +348,11 @@ function applyRoom(room) {
   const modeChanged = normalizeAnswerMode(room.answerMode) !== currentMode;
   const result = room.me?.result || 'pending';
   const shouldShowCorrect = result === 'correct' && room.revealMode === 2;
+  const isReceptionClosed = hasModeSelection && isInputLockedByHost && !shouldShowCorrect;
 
   handwritingSurfaceTone = shouldShowCorrect ? 'correct' : 'default';
   playerCompose.classList.toggle('result-correct', shouldShowCorrect);
+  playerCompose.classList.toggle('is-reception-closed', isReceptionClosed);
 
   if (isSelfLocked || (wasSelfLocked && !isSelfLocked) || !isDirty) {
     hydrateFromServerDraft(room, room.me);
