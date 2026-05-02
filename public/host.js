@@ -274,8 +274,8 @@ function renderAnswerMode(room) {
   modeHandwritingBtn.classList.toggle('button-primary', isHandwriting);
   modeHandwritingBtn.classList.toggle('button', true);
   hostCurrentModePill.textContent = isSelected
-    ? `回答方式: ${isHandwriting ? '手書き' : 'テキスト'}`
-    : '回答方式: 未選択';
+    ? `回答方法: ${isHandwriting ? '手書き' : '通常入力'}`
+    : '回答方法: 未選択';
 }
 
 function renderRoom(room) {
@@ -292,13 +292,13 @@ function renderRoom(room) {
 
   const onAirLabel = document.getElementById('hostOnAirLabel');
   if (onAirLabel) {
-    if (mode === 0) onAirLabel.textContent = '待機中';
+    if (mode === 0) onAirLabel.textContent = room.inputEnabled ? '回答受付中' : '準備中';
     else if (mode === 1) onAirLabel.textContent = '回答表示中';
     else if (mode === 2) onAirLabel.textContent = '正解表示中';
   }
 
   roomCodeEl.textContent = room.code;
-  toggleInputBtn.textContent = room.inputEnabled ? '配布を締め切る' : '配布開始';
+  toggleInputBtn.textContent = room.inputEnabled ? '回答受付を終了' : '回答受付を開始';
   toggleInputBtn.classList.toggle('button-primary', room.inputEnabled);
   toggleInputBtn.classList.toggle('button-success', !room.inputEnabled);
   toggleInputBtn.disabled = !room.inputEnabled && !room.answerMode;
@@ -333,7 +333,7 @@ function setHostAnswerMode(mode) {
       return;
     }
 
-    setMessage(controlMessage, mode === 'handwriting' ? '回答方式を手書きに切り替えました。' : '回答方式をテキストに切り替えました。', 'ok');
+    setMessage(controlMessage, mode === 'handwriting' ? '回答方法を手書きに設定しました。' : '回答方法を通常入力に設定しました。', 'ok');
   });
 }
 
@@ -363,7 +363,7 @@ toggleInputBtn.addEventListener('click', () => {
         return;
       }
 
-      setMessage(controlMessage, nextState ? '配布を開始しました。' : '配布を締め切りました。', 'ok');
+      setMessage(controlMessage, nextState ? '回答受付を開始しました。' : '回答受付を終了しました。', 'ok');
     }
   );
 });

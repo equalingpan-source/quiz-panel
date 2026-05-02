@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>親機 | Quiz Panel Handwriting</title>
+  <title>親機 | Quiz Panel</title>
   <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
   <main class="page host-page">
     <section class="panel setup-panel" id="createSection">
       <h1>Quiz Panel 親機</h1>
-      <p class="description">ルームを作成し、回答方式を選んで出題できます。参加者の回答確認と、モニター表示の切替もこの画面から行います。</p>
+      <p class="description">ルームを作成し、回答受付の準備をして出題できます。参加者の回答確認と、モニター表示の切替もこの画面から行います。</p>
       <button class="button button-primary" id="createRoomBtn" type="button">ルームを作成</button>
       <p class="status-text" id="createMessage"></p>
     </section>
@@ -36,19 +36,19 @@
         <div class="section-head host-answer-head">
           <div class="host-head-copy">
             <h2>回答一覧</h2>
-            <p class="description">出題前に回答方式を決めてから入力を受け付けてください。正解判定はカードをクリックすると切り替わります。</p>
+            <p class="description">回答方法を決めてから回答受付を開始してください。正解判定はカードをクリックすると切り替わります。</p>
           </div>
 
           <div class="host-mode-panel">
-            <span class="label">今回の回答方式</span>
+            <span class="label">今回の回答方法</span>
             <div class="host-mode-switch" id="hostModeSwitch">
-              <button class="button host-mode-button" id="modeTextBtn" type="button">テキスト</button>
+              <button class="button host-mode-button" id="modeTextBtn" type="button">通常入力</button>
               <button class="button host-mode-button" id="modeHandwritingBtn" type="button">手書き</button>
             </div>
           </div>
 
           <div class="button-row host-action-row">
-            <button class="button button-primary" id="toggleInputBtn" type="button">入力を締め切る</button>
+            <button class="button button-primary" id="toggleInputBtn" type="button">回答受付を終了</button>
             <button class="button" id="toggleDisplayBtn" type="button">回答を表示する</button>
             <button class="button button-danger" id="clearAllBtn" type="button">次の問題へリセット</button>
           </div>
@@ -56,8 +56,8 @@
 
         <div class="host-board-stage" id="hostBoardStage">
           <div class="host-board-topline">
-            <div class="host-board-onair" id="hostOnAirLabel">待機中</div>
-            <div class="host-current-mode-pill" id="hostCurrentModePill">回答方式: テキスト</div>
+            <div class="host-board-onair" id="hostOnAirLabel">準備中</div>
+            <div class="host-current-mode-pill" id="hostCurrentModePill">回答方法: 未選択</div>
           </div>
           <div class="host-answer-grid" id="playerCards"></div>
         </div>

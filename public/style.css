@@ -825,17 +825,6 @@ textarea {
   align-items: center;
 }
 
-.player-meta-copy {
-  display: grid;
-  gap: 2px;
-}
-
-.player-mode-caption {
-  color: var(--muted);
-  font-size: 0.94rem;
-  font-weight: 700;
-}
-
 .char-counter {
   color: var(--muted);
   font-size: 0.94rem;
@@ -848,6 +837,11 @@ textarea {
   border-radius: 20px;
   background: #f8fbff;
   overflow: hidden;
+}
+
+.player-compose.mode-handwriting .player-input-wrap {
+  border-color: #5f84f4;
+  background: #2f57d8;
 }
 
 .player-wait-panel {
@@ -901,19 +895,19 @@ textarea {
 .handwriting-stage {
   width: 100%;
   height: 220px;
-  padding: 12px;
+  padding: 0;
 }
 
 .handwriting-canvas {
   width: 100%;
   height: 100%;
   display: block;
-  border: 1px solid #5f84f4;
-  border-radius: 18px;
-  background: #2f57d8;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   touch-action: none;
   cursor: crosshair;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  box-shadow: none;
 }
 
 .player-footer {
@@ -1002,8 +996,7 @@ textarea {
 }
 
 .player-compose.result-correct .char-counter,
-.player-compose.result-correct .answer-input::placeholder,
-.player-compose.result-correct .player-mode-caption {
+.player-compose.result-correct .answer-input::placeholder {
   color: rgba(255, 255, 255, 0.82);
 }
 
@@ -1093,7 +1086,7 @@ textarea {
 
   .handwriting-stage {
     height: 180px;
-    padding: 10px;
+    padding: 0;
   }
 
   .player-wait-panel {

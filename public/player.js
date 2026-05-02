@@ -11,7 +11,6 @@ const playerCompose = document.getElementById('playerCompose');
 const clearAnswerBtn = document.getElementById('clearAnswerBtn');
 const submitAnswerBtn = document.getElementById('submitAnswerBtn');
 const charCounter = document.getElementById('charCounter');
-const modeCaption = document.getElementById('modeCaption');
 const textInputPanel = document.getElementById('textInputPanel');
 const handwritingInputPanel = document.getElementById('handwritingInputPanel');
 const playerWaitPanel = document.getElementById('playerWaitPanel');
@@ -91,7 +90,6 @@ function updateModeUi() {
   const isHandwriting = currentMode === 'handwriting';
   textInputPanel.classList.toggle('hidden', isHandwriting);
   handwritingInputPanel.classList.toggle('hidden', !isHandwriting);
-  modeCaption.textContent = isHandwriting ? '親機指定: 手書き回答' : '親機指定: テキスト回答';
   playerCompose.classList.toggle('mode-handwriting', isHandwriting);
   playerCompose.classList.toggle('mode-text', !isHandwriting);
   syncCounter();
@@ -248,14 +246,13 @@ function applyRoom(room) {
   if (!hasModeSelection) {
     textInputPanel.classList.add('hidden');
     handwritingInputPanel.classList.add('hidden');
-    modeCaption.textContent = '親機が回答方式を選択中';
-    playerWaitText.textContent = '親機が回答方式を選んで配布開始するまでお待ちください。';
-    charCounter.textContent = '待機中';
+    playerWaitText.textContent = '親機の準備が終わるまでお待ちください。';
+    charCounter.textContent = '準備中';
   } else if (!room.inputEnabled && !isSelfLocked) {
     playerWaitPanel.classList.remove('hidden');
     textInputPanel.classList.add('hidden');
     handwritingInputPanel.classList.add('hidden');
-    playerWaitText.textContent = '配布開始までお待ちください。開始後に入力できます。';
+    playerWaitText.textContent = '回答受付が始まるまでお待ちください。';
   } else {
     playerWaitPanel.classList.add('hidden');
   }

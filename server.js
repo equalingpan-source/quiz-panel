@@ -366,7 +366,7 @@ io.on('connection', (socket) => {
 
     const nextEnabled = inputEnabled !== false;
     if (nextEnabled && !room.answerMode) {
-      ack({ ok: false, message: '先に回答方式を選んでから配布開始してください。' });
+      ack({ ok: false, message: '先に回答方法を選んでから回答受付を開始してください。' });
       return;
     }
     const shouldRequestLocks = room.inputEnabled && !nextEnabled;
@@ -385,7 +385,7 @@ io.on('connection', (socket) => {
     if (!room) return;
 
     if (room.inputEnabled) {
-      ack({ ok: false, message: '配布中は回答方式を変更できません。いったん締め切ってください。' });
+      ack({ ok: false, message: '回答受付中は回答方法を変更できません。いったん受付を終了してください。' });
       return;
     }
 
