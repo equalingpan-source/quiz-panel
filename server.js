@@ -254,7 +254,7 @@ function requireHost(roomCode, socket, ack) {
   return room;
 }
 
-function clearRound(room) {
+function clearRound(room, nextPhase = 'setup') {
   const preservedAnswerMode = parseRoomAnswerMode(room.answerMode) || 'text';
   for (const player of room.players.values()) {
     if (player.disconnectTimer) {
@@ -269,7 +269,7 @@ function clearRound(room) {
     player.locked = false;
   }
 
-  room.phase = 'setup';
+  room.phase = normalizeRoomPhase(nextPhase);
   room.answerMode = preservedAnswerMode;
   room.revealedAnswers.clear();
 }
@@ -458,8 +458,8 @@ io.on('connection', (socket) => {
     const room = requireHost(roomCode, socket, ack);
     if (!room) return;
 
-    if (normalizeRoomPhase(room.phase) !== 'setup') {
-      ack({ ok: false, message: '回答方法は準備中だけ変更できます。次の問題に切り替えてから変更してください。' });
+    if (normalizeRoomPhase(room.phase) === 'open') {
+      ack({ ok: false, message: '回答受付中は回答方法を変更できません。' });
       return;
     }
 
@@ -566,11 +566,11 @@ io.on('connection', (socket) => {
     emitRoomState(room);
   });
 
-  socket.on('host:clearAll', ({ roomCode }, ack = () => {}) => {
+  socket.on('host:clearAll', ({ roomCode, nextPhase }, ack = () => {}) => {
     const room = requireHost(roomCode, socket, ack);
     if (!room) return;
 
-    clearRound(room);
+    clearRound(room, nextPhase);
     ack({ ok: true, room: serializeHostRoom(room) });
     emitRoomState(room);
   });

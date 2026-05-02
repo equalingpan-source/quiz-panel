@@ -301,8 +301,8 @@ function renderAnswerMode(room) {
   const isHandwriting = room.answerMode === 'handwriting';
   modeTextBtn.className = `button host-mode-button${!isHandwriting ? ' button-primary' : ''}`;
   modeHandwritingBtn.className = `button host-mode-button${isHandwriting ? ' button-primary' : ''}`;
-  modeTextBtn.disabled = phase !== 'setup';
-  modeHandwritingBtn.disabled = phase !== 'setup';
+  modeTextBtn.disabled = phase === 'open';
+  modeHandwritingBtn.disabled = phase === 'open';
   hostCurrentModePill.textContent = `回答方法: ${isHandwriting ? '手書き' : '通常入力'}`;
 }
 
@@ -449,13 +449,13 @@ function goToNextRound() {
   const confirmed = confirm('現在の回答をリセットしていいですか？');
   if (!confirmed) return;
 
-  socket.emit('host:clearAll', { roomCode: currentRoom.code }, (response) => {
+  socket.emit('host:clearAll', { roomCode: currentRoom.code, nextPhase: 'open' }, (response) => {
     if (!response.ok) {
       setMessage(controlMessage, response.message, 'warn');
       return;
     }
 
-    setMessage(controlMessage, '次の問題に切り替えました。', 'ok');
+    setMessage(controlMessage, '次の回答受付を開始しました。', 'ok');
   });
 }
 
